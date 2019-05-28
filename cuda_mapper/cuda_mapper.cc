@@ -24,14 +24,8 @@
 using namespace Legion;
 using namespace Legion::Mapping;
 
-/*
- * In this example, we perform the same
- * daxpy computation as example 07.  While
- * the source code for the actual computation
- * between the two examples is identical, we 
- * show to create a custom mapper that changes 
- * the mapping of the computation onto the hardware.
- */
+//#define USE_DEFAULT_MAP_TASK
+//#define USE_ZEROCOPY_MEM
 
 enum TaskIDs {
   TOP_LEVEL_TASK_ID,
@@ -42,8 +36,6 @@ enum TaskIDs {
 
 enum FieldIDs {
   FID_X,
-  FID_Y,
-  FID_Z,
 };
 
 void init_field_task_gpu(const Task *task,
@@ -56,13 +48,19 @@ public:
   AdversarialMapper(Machine machine, 
       Runtime *rt, Processor local);
 public:
+  void map_region(const MapperContext ctx,
+                  LogicalRegion region, Memory target,
+                  std::vector<PhysicalInstance> &instances);
   virtual void map_task(const MapperContext ctx,
                         const Task& task,
                         const MapTaskInput& input,
                               MapTaskOutput& output);
-  virtual void report_profiling(const MapperContext      ctx,
-				const Task&              task,
-				const TaskProfilingInfo& input);
+
+protected:
+  Memory system_mem;
+  Memory zerocopy_mem;
+  Memory gpu_mem;
+  std::map<std::pair<LogicalRegion,Memory>,PhysicalInstance> local_instances;
 };
 
 void mapper_registration(Machine machine, Runtime *rt,
@@ -76,308 +74,217 @@ void mapper_registration(Machine machine, Runtime *rt,
   }
 }
 
+// Here is the constructor for our adversarial mapper.
+// We'll use the constructor to illustrate how mappers can
+// get access to information regarding the current machine.
 AdversarialMapper::AdversarialMapper(Machine m, 
                                      Runtime *rt, Processor p)
   : DefaultMapper(rt->get_mapper_runtime(), m, p) // pass arguments through to TestMapper 
 {
-  // The machine object is a singleton object that can be
-  // used to get information about the underlying hardware.
-  // The machine pointer will always be provided to all
-  // mappers, but can be accessed anywhere by the static
-  // member method Machine::get_machine().  Here we get
-  // a reference to the set of all processors in the machine
-  // from the machine object.  Note that the Machine object
-  // actually comes from the Legion low-level runtime, most
-  // of which is not directly needed by application code.
-  // Typedefs in legion_types.h ensure that all necessary
-  // types for querying the machine object are in scope
-  // in the Legion namespace.
+
   std::set<Processor> all_procs;
   machine.get_all_processors(all_procs);
-  // Recall that we create one mapper for every processor.  We
-  // only want to print out this information one time, so only
-  // do it if we are the mapper for the first processor in the
-  // list of all processors in the machine.
-  if (all_procs.begin()->id + 1 == local_proc.id)
-  {
-    // Print out how many processors there are and each
-    // of their kinds.
-    printf("There are %zd processors:\n", all_procs.size());
-    for (std::set<Processor>::const_iterator it = all_procs.begin();
-          it != all_procs.end(); it++)
-    {
-      // For every processor there is an associated kind
-      Processor::Kind kind = it->kind();
-      switch (kind)
-      {
-        // Latency-optimized cores (LOCs) are CPUs
-        case Processor::LOC_PROC:
-          {
-            printf("  Processor ID " IDFMT " is CPU\n", it->id); 
-            break;
-          }
-        // Throughput-optimized cores (TOCs) are GPUs
-        case Processor::TOC_PROC:
-          {
-            printf("  Processor ID " IDFMT " is GPU\n", it->id);
-            break;
-          }
-        // Processor for doing I/O
-        case Processor::IO_PROC:
-          {
-            printf("  Processor ID " IDFMT " is I/O Proc\n", it->id);
-            break;
-          }
-        // Utility processors are helper processors for
-        // running Legion runtime meta-level tasks and 
-        // should not be used for running application tasks
-        case Processor::UTIL_PROC:
-          {
-            printf("  Processor ID " IDFMT " is utility\n", it->id);
-            break;
-          }
-        default:
-          assert(false);
-      }
-    }
-    // We can also get the list of all the memories available
-    // on the target architecture and print out their info.
-    std::set<Memory> all_mems;
-    machine.get_all_memories(all_mems);
-    printf("There are %zd memories:\n", all_mems.size());
-    for (std::set<Memory>::const_iterator it = all_mems.begin();
-          it != all_mems.end(); it++)
-    {
-      Memory::Kind kind = it->kind();
-      size_t memory_size_in_kb = it->capacity() >> 10;
-      switch (kind)
-      {
-        // RDMA addressable memory when running with GASNet
-        case Memory::GLOBAL_MEM:
-          {
-            printf("  GASNet Global Memory ID " IDFMT " has %zd KB\n", 
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // DRAM on a single node
-        case Memory::SYSTEM_MEM:
-          {
-            printf("  System Memory ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // Pinned memory on a single node
-        case Memory::REGDMA_MEM:
-          {
-            printf("  Pinned Memory ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // A memory associated with a single socket
-        case Memory::SOCKET_MEM:
-          {
-            printf("  Socket Memory ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // Zero-copy memory betweeen CPU DRAM and
-        // all GPUs on a single node
-        case Memory::Z_COPY_MEM:
-          {
-            printf("  Zero-Copy Memory ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // GPU framebuffer memory for a single GPU
-        case Memory::GPU_FB_MEM:
-          {
-            printf("  GPU Frame Buffer Memory ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // Disk memory on a single node
-        case Memory::DISK_MEM:
-          {
-            printf("  Disk Memory ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // HDF framebuffer memory for a single GPU
-        case Memory::HDF_MEM:
-          {
-            printf("  HDF Memory ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // File memory on a single node
-        case Memory::FILE_MEM:
-          {
-            printf("  File Memory ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // Block of memory sized for L3 cache
-        case Memory::LEVEL3_CACHE:
-          {
-            printf("  Level 3 Cache ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // Block of memory sized for L2 cache
-        case Memory::LEVEL2_CACHE:
-          {
-            printf("  Level 2 Cache ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        // Block of memory sized for L1 cache
-        case Memory::LEVEL1_CACHE:
-          {
-            printf("  Level 1 Cache ID " IDFMT " has %zd KB\n",
-                    it->id, memory_size_in_kb);
-            break;
-          }
-        default:
-          assert(false);
-      }
-    }
+  
+  system_mem = Memory::NO_MEMORY;
+  zerocopy_mem = Memory::NO_MEMORY;
+  gpu_mem = Memory::NO_MEMORY;
 
-    // The Legion machine model represented by the machine object
-    // can be thought of as a graph with processors and memories
-    // as the two kinds of nodes.  There are two kinds of edges
-    // in this graph: processor-memory edges and memory-memory
-    // edges.  An edge between a processor and a memory indicates
-    // that the processor can directly perform load and store
-    // operations to that memory.  Memory-memory edges indicate
-    // that data movement can be directly performed between the
-    // two memories.  To illustrate how this works we examine
-    // all the memories visible to our local processor in 
-    // this mapper.  We can get our set of visible memories
-    // using the 'get_visible_memories' method on the machine.
-    std::set<Memory> vis_mems;
-    machine.get_visible_memories(local_proc, vis_mems);
-    printf("There are %zd memories visible from processor " IDFMT "\n",
-            vis_mems.size(), local_proc.id);
-    for (std::set<Memory>::const_iterator it = vis_mems.begin();
-          it != vis_mems.end(); it++)
+  // Print out how many processors there are and each
+  // of their kinds.
+  printf("There are %zd processors:\n", all_procs.size());
+  for (std::set<Processor>::const_iterator it = all_procs.begin();
+        it != all_procs.end(); it++)
+  {
+    // For every processor there is an associated kind
+    Processor::Kind kind = it->kind();
+    switch (kind)
     {
-      // Edges between nodes are called affinities in the
-      // machine model.  Affinities also come with approximate
-      // indications of the latency and bandwidth between the 
-      // two nodes.  Right now these are unit-less measurements,
-      // but our plan is to teach the Legion runtime to profile
-      // these values on start-up to give them real values
-      // and further increase the portability of Legion applications.
-      std::vector<ProcessorMemoryAffinity> affinities;
-      int results = 
-        machine.get_proc_mem_affinity(affinities, local_proc, *it);
-      // We should only have found 1 results since we
-      // explicitly specified both values.
-      assert(results == 1);
-      printf("  Memory " IDFMT " has bandwidth %d and latency %d\n",
-              it->id, affinities[0].bandwidth, affinities[0].latency);
+      // Latency-optimized cores (LOCs) are CPUs
+      case Processor::LOC_PROC:
+        {
+          printf("  Processor ID " IDFMT " is CPU\n", it->id); 
+          break;
+        }
+      // Throughput-optimized cores (TOCs) are GPUs
+      case Processor::TOC_PROC:
+        {
+          printf("  Processor ID " IDFMT " is GPU\n", it->id);
+          break;
+        }
+      // Processor for doing I/O
+      case Processor::IO_PROC:
+        {
+          printf("  Processor ID " IDFMT " is I/O Proc\n", it->id);
+          break;
+        }
+      // Utility processors are helper processors for
+      // running Legion runtime meta-level tasks and 
+      // should not be used for running application tasks
+      case Processor::UTIL_PROC:
+        {
+          printf("  Processor ID " IDFMT " is utility\n", it->id);
+          break;
+        }
+      default:
+        assert(false);
     }
   }
+  // We can also get the list of all the memories available
+  // on the target architecture and print out their info.
+  std::set<Memory> all_mems;
+  machine.get_all_memories(all_mems);
+  printf("There are %zd memories:\n", all_mems.size());
+  for (std::set<Memory>::const_iterator it = all_mems.begin();
+        it != all_mems.end(); it++)
+  {
+    Memory::Kind kind = it->kind();
+    size_t memory_size_in_kb = it->capacity() >> 10;
+    switch (kind)
+    {
+      // RDMA addressable memory when running with GASNet
+      case Memory::GLOBAL_MEM:
+        {
+          printf("  GASNet Global Memory ID " IDFMT " has %zd KB\n", 
+                  it->id, memory_size_in_kb);
+          break;
+        }
+      // DRAM on a single node
+      case Memory::SYSTEM_MEM:
+        {
+          if (system_mem == Memory::NO_MEMORY) {
+           system_mem = *it;
+          }
+          printf("  System Memory ID " IDFMT " has %zd KB\n",
+                  it->id, memory_size_in_kb);
+          break;
+        }
+      // Pinned memory on a single node
+      case Memory::REGDMA_MEM:
+        {
+          printf("  Pinned Memory ID " IDFMT " has %zd KB\n",
+                  it->id, memory_size_in_kb);
+          break;
+        }
+      // Zero-copy memory betweeen CPU DRAM and
+      // all GPUs on a single node
+      case Memory::Z_COPY_MEM:
+        {
+          if (zerocopy_mem == Memory::NO_MEMORY) {
+           zerocopy_mem = *it;
+          }
+          printf("  Zero-Copy Memory ID " IDFMT " has %zd KB\n",
+                  it->id, memory_size_in_kb);
+          break;
+        }
+      // GPU framebuffer memory for a single GPU
+      case Memory::GPU_FB_MEM:
+        {
+          if (gpu_mem == Memory::NO_MEMORY) {
+           gpu_mem = *it;
+          }
+          printf("  GPU Frame Buffer Memory ID " IDFMT " has %zd KB\n",
+                  it->id, memory_size_in_kb);
+          break;
+        }
+      default:
+        break;
+    }
+  }
+  
+  assert(system_mem != Memory::NO_MEMORY);
+  assert(zerocopy_mem != Memory::NO_MEMORY);
+  assert(gpu_mem != Memory::NO_MEMORY);
 }
-
 
 void AdversarialMapper::map_task(const MapperContext         ctx,
                                  const Task&                 task,
                                  const MapTaskInput&         input,
                                        MapTaskOutput&        output)
 {
-  DefaultMapper::map_task(ctx, task, input, output);
-
-  // Finally, let's ask for some profiling data to see the impact of our choices
+#ifndef USE_DEFAULT_MAP_TASK
+  if ((task.task_id != TOP_LEVEL_TASK_ID) && (task.task_id != CHECK_TASK_ID))
   {
-    using namespace ProfilingMeasurements;
-    output.task_prof_requests.add_measurement<OperationStatus>();
-    output.task_prof_requests.add_measurement<OperationTimeline>();
-    output.task_prof_requests.add_measurement<RuntimeOverhead>();
+ //   printf("mapper %p, system_mem " IDFMT " gpu mem " IDFMT "\n", this, system_mem.id, gpu_mem.id);
+    Processor::Kind target_kind = task.target_proc.kind();
+    VariantInfo chosen = default_find_preferred_variant(task, ctx,
+                      true/*needs tight bound*/, true/*cache*/, target_kind);
+    output.chosen_variant = chosen.variant;
+    output.task_priority = 0;
+    output.postmap_task = false;
+    default_policy_select_target_processors(ctx, task, output.target_procs);
+
+    bool map_to_gpu = task.target_proc.kind() == Processor::TOC_PROC;
+
+    for (unsigned idx = 0; idx < task.regions.size(); idx++)
+    {
+      if ((task.regions[idx].privilege == NO_ACCESS) ||
+          (task.regions[idx].privilege_fields.empty())) continue;
+
+      Memory target_memory;
+#ifdef USE_ZEROCOPY_MEM
+      target_memory = zerocopy_mem
+#else      
+      if (!map_to_gpu) {
+        target_memory = system_mem;
+      } else {
+        target_memory = gpu_mem;
+      }
+#endif
+      
+      printf("mapper %p, task %d, gpu %d, memid " IDFMT"\n", this, task.task_id, map_to_gpu, target_memory.id);
+      map_region(ctx, task.regions[idx].region, target_memory, output.chosen_instances[idx]);
+    }
+    runtime->acquire_instances(ctx, output.chosen_instances);
+  } else {
+    DefaultMapper::map_task(ctx, task, input, output);
   }
+#else
+  DefaultMapper::map_task(ctx, task, input, output);
+#endif
+  
 }
 
-void AdversarialMapper::report_profiling(const MapperContext      ctx,
-					 const Task&              task,
-					 const TaskProfilingInfo& input)
+void AdversarialMapper::map_region(const MapperContext ctx,
+                                   LogicalRegion region, Memory target,
+                                   std::vector<PhysicalInstance> &instances)
 {
-  // Local import of measurement names saves typing here without polluting
-  // namespace for everybody else
-  using namespace ProfilingMeasurements;
-
-  // You are not guaranteed to get measurements you asked for, so make sure to
-  // check the result of calls to get_measurement (or just call has_measurement
-  // first).  Also, the call returns a copy of the result that you must delete
-  // yourself.
-  OperationStatus *status = 
-    input.profiling_responses.get_measurement<OperationStatus>();
-  if (status)
-  {
-    switch (status->result)
-    {
-      case OperationStatus::COMPLETED_SUCCESSFULLY:
-        {
-          printf("Task %s COMPLETED SUCCESSFULLY\n", task.get_task_name());
-          break;
-        }
-      case OperationStatus::COMPLETED_WITH_ERRORS:
-        {
-          printf("Task %s COMPLETED WITH ERRORS\n", task.get_task_name());
-          break;
-        }
-      case OperationStatus::INTERRUPT_REQUESTED:
-        {
-          printf("Task %s was INTERRUPTED\n", task.get_task_name());
-          break;
-        }
-      case OperationStatus::TERMINATED_EARLY:
-        {
-          printf("Task %s TERMINATED EARLY\n", task.get_task_name());
-          break;
-        }
-      case OperationStatus::CANCELLED:
-        {
-          printf("Task %s was CANCELLED\n", task.get_task_name());
-          break;
-        }
-      default:
-        assert(false); // shouldn't get any of the rest currently
-    }
-    delete status;
+  const std::pair<LogicalRegion,Memory> key(region, target);
+  std::map<std::pair<LogicalRegion,Memory>,PhysicalInstance>::const_iterator
+    finder = local_instances.find(key);
+  if (finder != local_instances.end()) {
+    instances.push_back(finder->second);
+    return;
   }
-  else
-    printf("No operation status for task %s\n", task.get_task_name());
+  // First time through, then we make an instance
+  std::vector<LogicalRegion> regions(1, region);  
+  LayoutConstraintSet layout_constraints;
+  // No specialization
+  layout_constraints.add_constraint(SpecializedConstraint());
+  // SOA-Fortran dimension ordering
+  std::vector<DimensionKind> dimension_ordering(4);
+  dimension_ordering[0] = DIM_X;
+  dimension_ordering[1] = DIM_Y;
+  dimension_ordering[2] = DIM_Z;
+  dimension_ordering[3] = DIM_F;
+  layout_constraints.add_constraint(OrderingConstraint(dimension_ordering, 
+                                                       false/*contiguous*/));
+  // Constrained for the target memory kind
+  layout_constraints.add_constraint(MemoryConstraint(target.kind()));
+  // Have all the field for the instance available
+  std::vector<FieldID> all_fields;
+  runtime->get_field_space_fields(ctx, region.get_field_space(), all_fields);
+  layout_constraints.add_constraint(FieldConstraint(all_fields, false/*contiguous*/,
+                                                    false/*inorder*/));
 
-  OperationTimeline *timeline =
-    input.profiling_responses.get_measurement<OperationTimeline>();
-  if (timeline)
-  {
-    printf("Operation timeline for task %s: ready=%lld start=%lld stop=%lld\n",
-	   task.get_task_name(),
-	   timeline->ready_time,
-	   timeline->start_time,
-	   timeline->end_time);
-    delete timeline;
+  PhysicalInstance result; bool created;
+  if (!runtime->find_or_create_physical_instance(ctx, target, layout_constraints,
+        regions, result, created, true/*acquire*/, GC_NEVER_PRIORITY)) {
+    printf("ERROR: Mapper failed to allocate instance\n");
+    assert(false);
   }
-  else
-    printf("No operation timeline for task %s\n", task.get_task_name());
-
-  RuntimeOverhead *overhead =
-    input.profiling_responses.get_measurement<RuntimeOverhead>();
-  if (overhead)
-  {
-    long long total = (overhead->application_time +
-		       overhead->runtime_time +
-		       overhead->wait_time);
-    if (total <= 0) total = 1;
-    printf("Runtime overhead for task %s: runtime=%.1f%% wait=%.1f%%\n",
-	   task.get_task_name(),
-	   (100.0 * overhead->runtime_time / total),
-	   (100.0 * overhead->wait_time / total));
-    delete overhead;
-  }
-  else
-    printf("No runtime overhead data for task %s\n", task.get_task_name()); 
+  instances.push_back(result);
+  // Save the result for future use
+  local_instances[key] = result;
 }
 
 /*
@@ -421,7 +328,7 @@ void top_level_task(const Task *task,
     init_launcher.add_field(0/*idx*/, FID_X);
     runtime->execute_task(ctx, init_launcher);
   }
-  
+
   {
     TaskLauncher init_launcher(INIT_FIELD_TASK_GPU_ID, TaskArgument(NULL, 0));
     init_launcher.add_region_requirement(
@@ -452,7 +359,7 @@ void init_field_task_cpu(const Task *task,
 
   FieldID fid = *(task->regions[0].privilege_fields.begin());
   const int point = task->index_point.point_data[0];
-  printf("Initializing field %d for block %d...\n", fid, point);
+  printf("CPU initializing field %d for block %d...\n", fid, point);
 
   const FieldAccessor<WRITE_DISCARD,double,1> acc(regions[0], fid);
   // Note here that we get the domain for the subregion for
@@ -475,12 +382,18 @@ void check_task(const Task *task,
 
   Rect<1> rect = runtime->get_index_space_domain(ctx,
                   task->regions[0].region.get_index_space());
+  int ct = 0;
   for (PointInRectIterator<1> pir(rect); pir(); pir++)
   {
     double received = acc_x[*pir];
-    printf("x %f\n", received);
+    if (ct < 32) {
+      assert(received == 0.1);
+    } else {
+      assert(received == 0.29);
+    }
+    ct ++;
   }
-  printf("\n");
+  printf("Success\n");
 }
 
 

@@ -23,7 +23,7 @@ void init_field_task_gpu(const Task *task,
 
   FieldID fid = *(task->regions[0].privilege_fields.begin());
   const int point = task->index_point.point_data[0];
-  printf("Initializing field %d for block %d...\n", fid, point);
+  printf("GPU initializing field %d for block %d...\n", fid, point);
 
   const FieldAccessor<READ_WRITE,double,1,coord_t,
           Realm::AffineAccessor<double,1,coord_t> > acc(regions[0], fid);
