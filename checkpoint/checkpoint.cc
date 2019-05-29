@@ -100,6 +100,7 @@ void top_level_task(const Task *task,
                     Context ctx, Runtime *runtime)
 {
   int num_elements = 64; 
+  int num_subregions = 2;
   char disk_file_name[256];
   strcpy(disk_file_name, "checkpoint.dat");
 #ifdef USE_HDF
@@ -113,6 +114,8 @@ void top_level_task(const Task *task,
     const InputArgs &command_args = Runtime::get_input_args();
     for (int i = 1; i < command_args.argc; i++)
     {
+      if (!strcmp(command_args.argv[i],"-b"))
+        num_subregions = atoi(command_args.argv[++i]);
       if (!strcmp(command_args.argv[i],"-n"))
         num_elements = atoi(command_args.argv[++i]);
       if (!strcmp(command_args.argv[i],"-f"))
@@ -136,60 +139,66 @@ void top_level_task(const Task *task,
       runtime->create_field_allocator(ctx, input_fs);
     allocator.allocate_field(sizeof(double),FID_X);
   }
+  
+  Rect<1> color_bounds(0,num_subregions-1);
+  IndexSpace color_is = runtime->create_index_space(ctx, color_bounds);
+  IndexPartition ip = runtime->create_equal_partition(ctx, is, color_is);
+  
+  LogicalRegion input_lr = runtime->create_logical_region(ctx, is, input_fs);
+  LogicalPartition input_lp = runtime->get_logical_partition(ctx, input_lr, ip);
+
+  // **************** init task *************************
+  ArgumentMap arg_map;
+  IndexLauncher init_launcher(INIT_TASK_ID, color_is, 
+                              TaskArgument(NULL, 0), arg_map);  
+  init_launcher.add_region_requirement(
+        RegionRequirement(input_lp, 0/*projection ID*/, 
+                          WRITE_DISCARD, EXCLUSIVE, input_lr));
+  init_launcher.region_requirements[0].add_field(FID_X);
+  runtime->execute_index_space(ctx, init_launcher);
+  runtime->issue_execution_fence(ctx);
 
   // ****************************************** checkpoint **********************
-  LogicalRegion input_lr = runtime->create_logical_region(ctx, is, input_fs);
 
-  TaskLauncher init_launcher(INIT_TASK_ID, TaskArgument(NULL, 0));
-  init_launcher.add_region_requirement(
-        RegionRequirement(input_lr, WRITE_DISCARD, EXCLUSIVE, input_lr));
-  init_launcher.add_field(0/*idx*/, FID_X);
-  runtime->execute_task(ctx, init_launcher);
-  
-  runtime->issue_execution_fence(ctx);
-  
   PhysicalRegion cp_pr;
   LogicalRegion cp_lr = runtime->create_logical_region(ctx, is, input_fs);
-#ifdef USE_HDF
+#ifdef USE_HDF  
   if(*hdf5_file_name) {
     // create the HDF5 file first - attach wants it to already exist
     bool ok = generate_hdf_file(hdf5_file_name, hdf5_dataset_name, num_elements);
     assert(ok);
+    AttachLauncher hdf5_attach_launcher(EXTERNAL_HDF5_FILE, cp_lr, cp_lr);
     std::map<FieldID,const char*> field_map;
     field_map[FID_X] = hdf5_dataset_name;
     printf("Checkpointing data to HDF5 file '%s' (dataset='%s')\n", hdf5_file_name, hdf5_dataset_name);
-    cp_pr = runtime->attach_hdf5(ctx, hdf5_file_name, input_lr, input_lr, field_map, LEGION_FILE_READ_WRITE);
-  } else
-#endif
+    hdf5_attach_launcher.attach_hdf5(hdf5_file_name, field_map, LEGION_FILE_READ_WRITE);
+    cp_pr = runtime->attach_external_resource(ctx, hdf5_attach_launcher);
+   // cp_pr.wait_until_valid();
+  } else 
+#endif  
   {
     // create the disk file first - attach wants it to already exist
     bool ok = generate_disk_file(disk_file_name, num_elements);
     assert(ok);
+    AttachLauncher file_attach_launcher(EXTERNAL_POSIX_FILE, cp_lr, cp_lr);
     std::vector<FieldID> field_vec;
     field_vec.push_back(FID_X);
     printf("Checkpointing data to disk file '%s'\n", disk_file_name);
-    cp_pr = runtime->attach_file(ctx, disk_file_name, input_lr, input_lr, field_vec, LEGION_FILE_READ_WRITE);
+    file_attach_launcher.attach_file(disk_file_name, field_vec, LEGION_FILE_READ_WRITE);
+    cp_pr = runtime->attach_external_resource(ctx, file_attach_launcher);
   }
   
-  cp_pr.wait_until_valid();
-#if 0
-  CopyLauncher copy_launcher;
-  copy_launcher.add_copy_requirements(
+  CopyLauncher copy_launcher1;
+  copy_launcher1.add_copy_requirements(
       RegionRequirement(input_lr, READ_ONLY, EXCLUSIVE, input_lr),
       RegionRequirement(cp_lr, WRITE_DISCARD, EXCLUSIVE, cp_lr));
-  copy_launcher.add_src_field(0, FID_X);
-  copy_launcher.add_dst_field(0, FID_X);
-  runtime->issue_copy_operation(ctx, copy_launcher);
-#endif
-
-#ifdef USE_HDF
-  if(*hdf5_file_name) {
-    runtime->detach_hdf5(ctx, cp_pr);
-  } else
-#endif
-  {
-    runtime->detach_file(ctx, cp_pr);
-  }
+  copy_launcher1.add_src_field(0, FID_X);
+  copy_launcher1.add_dst_field(0, FID_X);
+  runtime->issue_copy_operation(ctx, copy_launcher1);
+  
+  
+  Future fu = runtime->detach_external_resource(ctx, cp_pr, true);
+  fu.wait();
   
   runtime->issue_execution_fence(ctx);
   
@@ -199,21 +208,23 @@ void top_level_task(const Task *task,
   LogicalRegion input_lr2 = runtime->create_logical_region(ctx, is, input_fs);
 #ifdef USE_HDF
   if(*hdf5_file_name) {
+    AttachLauncher hdf5_attach_launcher(EXTERNAL_HDF5_FILE, restart_lr, restart_lr);
     std::map<FieldID,const char*> field_map;
     field_map[FID_X] = hdf5_dataset_name;
     printf("Recoverring data to HDF5 file '%s' (dataset='%s')\n", hdf5_file_name, hdf5_dataset_name);
-    restart_pr = runtime->attach_hdf5(ctx, hdf5_file_name, restart_lr, restart_lr, field_map, LEGION_FILE_READ_WRITE);
+    hdf5_attach_launcher.attach_hdf5(hdf5_file_name, field_map, LEGION_FILE_READ_WRITE);
+    cp_pr = runtime->attach_external_resource(ctx, hdf5_attach_launcher);
   } else
 #endif
   {
+    AttachLauncher file_attach_launcher(EXTERNAL_POSIX_FILE, restart_lr, restart_lr);
     std::vector<FieldID> field_vec;
     field_vec.push_back(FID_X);
     printf("Recoverring data to disk file '%s'\n", disk_file_name);
-    restart_pr = runtime->attach_file(ctx, disk_file_name, restart_lr, restart_lr, field_vec, LEGION_FILE_READ_WRITE);
+    file_attach_launcher.attach_file(disk_file_name, field_vec, LEGION_FILE_READ_WRITE);
+    cp_pr = runtime->attach_external_resource(ctx, file_attach_launcher);
   }
   
-  cp_pr.wait_until_valid();
-#if 0
   CopyLauncher copy_launcher2;
   copy_launcher2.add_copy_requirements(
       RegionRequirement(restart_lr, READ_ONLY, EXCLUSIVE, restart_lr),
@@ -221,30 +232,40 @@ void top_level_task(const Task *task,
   copy_launcher2.add_src_field(0, FID_X);
   copy_launcher2.add_dst_field(0, FID_X);
   runtime->issue_copy_operation(ctx, copy_launcher2);
-#endif
 
-#ifdef USE_HDF
-  if(*hdf5_file_name) {
-    runtime->detach_hdf5(ctx, restart_pr);
-  } else
-#endif
-  {
-    runtime->detach_file(ctx, restart_pr);
-  }
+  fu = runtime->detach_external_resource(ctx, cp_pr, true);
+  fu.wait();
   
   runtime->issue_execution_fence(ctx);
   
+  
+  // *************************** check result ********************  
+#if 1
+  LogicalPartition input_lp2 = runtime->get_logical_partition(ctx, input_lr2, ip);
+  
+  IndexLauncher check_launcher(CHECK_TASK_ID, color_is, 
+                              TaskArgument(NULL, 0), arg_map);
+  check_launcher.add_region_requirement(
+        RegionRequirement(input_lp2, 0/*projection ID*/, 
+                          READ_ONLY, EXCLUSIVE, input_lr2));
+  check_launcher.region_requirements[0].add_field(FID_X);
+  runtime->execute_index_space(ctx, check_launcher);
+#else
   TaskLauncher check_launcher(CHECK_TASK_ID, TaskArgument(NULL, 0));
   check_launcher.add_region_requirement(
       RegionRequirement(input_lr2, READ_ONLY, EXCLUSIVE, input_lr2));
   check_launcher.region_requirements[0].add_field(FID_X);
   runtime->execute_task(ctx, check_launcher);
+#endif  
+  runtime->issue_execution_fence(ctx);
 
   runtime->destroy_logical_region(ctx, input_lr);
-  runtime->destroy_logical_region(ctx, cp_lr);
   runtime->destroy_logical_region(ctx, input_lr2);
+  runtime->destroy_logical_region(ctx, cp_lr);
   runtime->destroy_logical_region(ctx, restart_lr);
   runtime->destroy_field_space(ctx, input_fs);
+  runtime->destroy_index_space(ctx, color_is);
+  runtime->destroy_index_space(ctx, is);
 }
 
 void init_task(const Task *task,
@@ -257,7 +278,7 @@ void init_task(const Task *task,
 
   FieldID fid = *(task->regions[0].privilege_fields.begin());
   const int point = task->index_point.point_data[0];
-  printf("Initializing field %d for block %d...\n", fid, point);
+  printf("Initializing field %d for block %d, pid %d\n", fid, point, getpid());
 
   const FieldAccessor<WRITE_DISCARD,double,1> acc(regions[0], fid);
   // Note here that we get the domain for the subregion for
@@ -303,6 +324,7 @@ int main(int argc, char **argv)
     TaskVariantRegistrar registrar(TOP_LEVEL_TASK_ID, "top_level");
     registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
     Runtime::preregister_task_variant<top_level_task>(registrar, "top_level");
+  //  registrar.set_replicable();
   }
 
   {
