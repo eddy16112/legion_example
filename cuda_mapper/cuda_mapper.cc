@@ -347,6 +347,7 @@ void top_level_task(const Task *task,
 
   runtime->destroy_logical_region(ctx, input_lr);
   runtime->destroy_field_space(ctx, input_fs);
+  runtime->destroy_index_space(ctx, is);
 }
 
 void init_field_task_cpu(const Task *task,

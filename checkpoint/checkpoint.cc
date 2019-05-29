@@ -158,7 +158,7 @@ void top_level_task(const Task *task,
     std::map<FieldID,const char*> field_map;
     field_map[FID_X] = hdf5_dataset_name;
     printf("Checkpointing data to HDF5 file '%s' (dataset='%s')\n", hdf5_file_name, hdf5_dataset_name);
-    cp_pr = runtime->attach_hdf5(ctx, hdf5_file_name, cp_lr, cp_lr, field_map, LEGION_FILE_READ_WRITE);
+    cp_pr = runtime->attach_hdf5(ctx, hdf5_file_name, input_lr, input_lr, field_map, LEGION_FILE_READ_WRITE);
   } else
 #endif
   {
@@ -168,11 +168,11 @@ void top_level_task(const Task *task,
     std::vector<FieldID> field_vec;
     field_vec.push_back(FID_X);
     printf("Checkpointing data to disk file '%s'\n", disk_file_name);
-    cp_pr = runtime->attach_file(ctx, disk_file_name, cp_lr, cp_lr, field_vec, LEGION_FILE_READ_WRITE);
+    cp_pr = runtime->attach_file(ctx, disk_file_name, input_lr, input_lr, field_vec, LEGION_FILE_READ_WRITE);
   }
   
-  //cp_pr.wait_until_valid();
-#if 1
+  cp_pr.wait_until_valid();
+#if 0
   CopyLauncher copy_launcher;
   copy_launcher.add_copy_requirements(
       RegionRequirement(input_lr, READ_ONLY, EXCLUSIVE, input_lr),
@@ -212,8 +212,8 @@ void top_level_task(const Task *task,
     restart_pr = runtime->attach_file(ctx, disk_file_name, restart_lr, restart_lr, field_vec, LEGION_FILE_READ_WRITE);
   }
   
-  //cp_pr.wait_until_valid();
-#if 1
+  cp_pr.wait_until_valid();
+#if 0
   CopyLauncher copy_launcher2;
   copy_launcher2.add_copy_requirements(
       RegionRequirement(restart_lr, READ_ONLY, EXCLUSIVE, restart_lr),
