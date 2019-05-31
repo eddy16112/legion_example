@@ -21,7 +21,7 @@ enum FieldIDs {
   FID_X,
 };
 
-//#define USE_CR
+#define USE_CR
 
 bool generate_disk_file(const char *file_name, int num_elements)
 {
@@ -165,7 +165,15 @@ void top_level_task(const Task *task,
 #endif
     std::map<FieldID,const char*> field_map;
     field_map[FID_X] = hdf5_dataset_name;
-    printf("Checkpointing data to HDF5 file '%s' (dataset='%s')\n", file_name, hdf5_dataset_name);
+    ShardID shard_id = 0;
+    if (use_local_file == 1) {
+      shard_id = runtime->get_shard_id(ctx, true);
+      std::string fname(file_name);
+      fname = fname + std::to_string(shard_id);
+      char *file_name_tmp = const_cast<char*>(fname.c_str());
+      memcpy(file_name, file_name_tmp, fname.size());
+    }
+    printf("Checkpointing data to HDF5 file '%s' (dataset='%s'), shard %d\n", file_name, hdf5_dataset_name, shard_id);
     hdf5_attach_launcher.attach_hdf5(file_name, field_map, LEGION_FILE_READ_WRITE, (use_local_file==1));
     cp_pr = runtime->attach_external_resource(ctx, hdf5_attach_launcher);
    // cp_pr.wait_until_valid();
@@ -182,13 +190,21 @@ void top_level_task(const Task *task,
 #endif
     std::vector<FieldID> field_vec;
     field_vec.push_back(FID_X);
-    printf("Checkpointing data to disk file '%s'\n", file_name);
+    ShardID shard_id = 0;
+    if (use_local_file == 1) {
+      shard_id = runtime->get_shard_id(ctx, true);
+      std::string fname(file_name);
+      fname = fname + std::to_string(shard_id);
+      char *file_name_tmp = const_cast<char*>(fname.c_str());
+      memcpy(file_name, file_name_tmp, fname.size());
+    }
+    printf("Checkpointing data to disk file '%s', shard %d\n", file_name, shard_id);
     file_attach_launcher.attach_file(file_name, field_vec, LEGION_FILE_READ_WRITE, (use_local_file==1));
     cp_pr = runtime->attach_external_resource(ctx, file_attach_launcher);
   }
  
 #if 1
-  IndexCopyLauncher copy_launcher1(is);
+  IndexCopyLauncher copy_launcher1(color_is);
   copy_launcher1.add_copy_requirements(
       RegionRequirement(input_lp, 0, READ_ONLY, EXCLUSIVE, input_lr),
       RegionRequirement(cp_lp, 0, WRITE_DISCARD, EXCLUSIVE, cp_lr));
@@ -212,6 +228,8 @@ void top_level_task(const Task *task,
   PhysicalRegion restart_pr;
   LogicalRegion restart_lr = runtime->create_logical_region(ctx, is, input_fs);
   LogicalRegion input_lr2 = runtime->create_logical_region(ctx, is, input_fs);
+  LogicalPartition input_lp2 = runtime->get_logical_partition(ctx, input_lr2, ip);
+  LogicalPartition restart_lp = runtime->get_logical_partition(ctx, restart_lr, ip);
 #ifdef USE_HDF
   if(use_hdf5 == 1) {
 #ifdef USE_CR
@@ -221,6 +239,14 @@ void top_level_task(const Task *task,
 #endif
     std::map<FieldID,const char*> field_map;
     field_map[FID_X] = hdf5_dataset_name;
+    ShardID shard_id = 0;
+    if (use_local_file == 1) {
+      shard_id = runtime->get_shard_id(ctx, true);
+      std::string fname(file_name);
+      fname = fname + std::to_string(shard_id);
+      char *file_name_tmp = const_cast<char*>(fname.c_str());
+      memcpy(file_name, file_name_tmp, fname.size());
+    }
     printf("Recoverring data to HDF5 file '%s' (dataset='%s')\n", file_name, hdf5_dataset_name);
     hdf5_attach_launcher.attach_hdf5(file_name, field_map, LEGION_FILE_READ_WRITE, (use_local_file==1));
     restart_pr = runtime->attach_external_resource(ctx, hdf5_attach_launcher);
@@ -234,15 +260,30 @@ void top_level_task(const Task *task,
 #endif
     std::vector<FieldID> field_vec;
     field_vec.push_back(FID_X);
+    ShardID shard_id = 0;
+    if (use_local_file == 1) {
+      shard_id = runtime->get_shard_id(ctx, true);
+      std::string fname(file_name);
+      fname = fname + std::to_string(shard_id);
+      char *file_name_tmp = const_cast<char*>(fname.c_str());
+      memcpy(file_name, file_name_tmp, fname.size());
+    }
     printf("Recoverring data to disk file '%s'\n", file_name);
     file_attach_launcher.attach_file(file_name, field_vec, LEGION_FILE_READ_WRITE, (use_local_file==1));
     restart_pr = runtime->attach_external_resource(ctx, file_attach_launcher);
   }
   
+#if 1
+  IndexCopyLauncher copy_launcher2(color_is);
+  copy_launcher2.add_copy_requirements(
+      RegionRequirement(restart_lp, 0, READ_ONLY, EXCLUSIVE, restart_lr),
+      RegionRequirement(input_lp2, 0, WRITE_DISCARD, EXCLUSIVE, input_lr2));
+#else
   CopyLauncher copy_launcher2;
   copy_launcher2.add_copy_requirements(
       RegionRequirement(restart_lr, READ_ONLY, EXCLUSIVE, restart_lr),
       RegionRequirement(input_lr2, WRITE_DISCARD, EXCLUSIVE, input_lr2));
+#endif
   copy_launcher2.add_src_field(0, FID_X);
   copy_launcher2.add_dst_field(0, FID_X);
   runtime->issue_copy_operation(ctx, copy_launcher2);
@@ -254,8 +295,6 @@ void top_level_task(const Task *task,
   
   
   // *************************** check result ********************  
-  LogicalPartition input_lp2 = runtime->get_logical_partition(ctx, input_lr2, ip);
-  
   IndexLauncher check_launcher(CHECK_TASK_ID, color_is, 
                               TaskArgument(NULL, 0), arg_map);
   check_launcher.add_region_requirement(

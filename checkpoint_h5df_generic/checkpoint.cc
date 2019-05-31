@@ -75,8 +75,6 @@ void top_level_task(const Task *task,
   char file_name[256];
   strcpy(file_name, "checkpoint.dat");
   
-  char hdf5_dataset_name[256];
-  strcpy(hdf5_dataset_name, "FID_X");
   // Check for any command line arguments
   {
     const InputArgs &command_args = Runtime::get_input_args();
