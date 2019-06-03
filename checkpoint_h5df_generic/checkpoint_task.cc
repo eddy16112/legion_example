@@ -37,10 +37,33 @@ bool generate_hdf_file(const char *file_name, std::map<FieldID, std::string> &fi
   return true;
 }
 
-CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launch_space, TaskArgument global_arg, ArgumentMap map)
-  : IndexLauncher(CheckpointIndexLauncher::TASK_ID, launch_space, global_arg, map)
+CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, TaskArgument task_arg, ArgumentMap map)
+  : IndexLauncher()
 {
+  task_id = CheckpointIndexLauncher::TASK_ID;
+  launch_space = launchspace;
+  global_arg = task_arg;
+}
+
+CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map)
+  : IndexLauncher()
+{
+  strcpy(task_argument.file_name, file_name);
   
+  Realm::Serialization::DynamicBufferSerializer dbs(0);
+  dbs << field_string_map;
+  task_argument.field_map_size = dbs.bytes_used();
+  memcpy(task_argument.field_map_serial, dbs.detach_buffer(), task_argument.field_map_size);
+  
+  task_id = CheckpointIndexLauncher::TASK_ID;
+  launch_space = launchspace;
+  global_arg = TaskArgument(&task_argument, sizeof(task_argument));
+//  printf("filename %s, task_arg size %ld\n", task_argument.file_name, global_arg.get_size()); 
+}
+
+CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map)
+  : CheckpointIndexLauncher(launchspace, file_name.c_str(), field_string_map)
+{ 
 }
 
 /*static*/ 
@@ -104,4 +127,90 @@ void CheckpointIndexLauncher::register_task(void)
   TaskVariantRegistrar registrar(CheckpointIndexLauncher::TASK_ID, CheckpointIndexLauncher::TASK_NAME);
   registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
   Runtime::preregister_task_variant<cpu_impl>(registrar, CheckpointIndexLauncher::TASK_NAME);
+}
+
+RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, TaskArgument task_arg, ArgumentMap map)
+  : IndexLauncher()
+{
+  task_id = RecoverIndexLauncher::TASK_ID;
+  launch_space = launchspace;
+  global_arg = task_arg;
+}
+
+RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map)
+  : IndexLauncher()
+{
+  strcpy(task_argument.file_name, file_name);
+  
+  Realm::Serialization::DynamicBufferSerializer dbs(0);
+  dbs << field_string_map;
+  task_argument.field_map_size = dbs.bytes_used();
+  memcpy(task_argument.field_map_serial, dbs.detach_buffer(), task_argument.field_map_size);
+  
+  task_id = RecoverIndexLauncher::TASK_ID;
+  launch_space = launchspace;
+  global_arg = TaskArgument(&task_argument, sizeof(task_argument));
+//  printf("filename %s, task_arg size %ld\n", task_argument.file_name, global_arg.get_size()); 
+}
+
+RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map)
+  : RecoverIndexLauncher(launchspace, file_name.c_str(), field_string_map)
+{ 
+}
+
+/*static*/ 
+const char * const RecoverIndexLauncher::TASK_NAME = "recover";
+
+void RecoverIndexLauncher::cpu_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime)
+{
+  const int point = task->index_point.point_data[0];
+  
+  struct task_args_s task_arg = *(struct task_args_s *) task->args;
+  std::map<FieldID, std::string> field_string_map;
+  Realm::Serialization::FixedBufferDeserializer fdb(task_arg.field_map_serial, task_arg.field_map_size);
+  bool ok  = fdb >> field_string_map;
+  if(!ok) {
+    printf("task args deserializer error\n");
+  }
+  
+  std::string fname(task_arg.file_name);
+  fname = fname + std::to_string(point);
+  char *file_name = const_cast<char*>(fname.c_str());
+  
+  
+  PhysicalRegion restart_pr;
+  LogicalRegion input_lr2 = regions[0].get_logical_region();
+  LogicalRegion restart_lr = runtime->create_logical_region(ctx, input_lr2.get_index_space(), input_lr2.get_field_space());
+
+  AttachLauncher hdf5_attach_launcher(EXTERNAL_HDF5_FILE, restart_lr, restart_lr);
+  std::map<FieldID,const char*> field_map;
+  for (std::map<FieldID, std::string>::iterator it = field_string_map.begin() ; it != field_string_map.end(); ++it) {
+    field_map.insert(std::make_pair(it->first, (it->second).c_str()));
+  }
+  printf("Recoverring data to HDF5 file '%s' (dataset='%ld')\n", file_name, field_map.size());
+  hdf5_attach_launcher.attach_hdf5(file_name, field_map, LEGION_FILE_READ_WRITE);
+  restart_pr = runtime->attach_external_resource(ctx, hdf5_attach_launcher);
+
+  std::set<FieldID> field_set = task->regions[0].privilege_fields; 
+  CopyLauncher copy_launcher2;
+  copy_launcher2.add_copy_requirements(
+      RegionRequirement(restart_lr, READ_ONLY, EXCLUSIVE, restart_lr),
+      RegionRequirement(input_lr2, WRITE_DISCARD, EXCLUSIVE, input_lr2));
+  for(std::set<FieldID>::iterator it = field_set.begin(); it != field_set.end(); ++it) {
+    copy_launcher2.add_src_field(0, *it);
+    copy_launcher2.add_dst_field(0, *it);
+  }
+  runtime->issue_copy_operation(ctx, copy_launcher2);
+
+  Future fu = runtime->detach_external_resource(ctx, restart_pr, true);
+  fu.wait();
+  runtime->destroy_logical_region(ctx, restart_lr);
+}
+
+/*static*/
+void RecoverIndexLauncher::register_task(void)
+{
+  TaskVariantRegistrar registrar(RecoverIndexLauncher::TASK_ID, RecoverIndexLauncher::TASK_NAME);
+  registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+  Runtime::preregister_task_variant<cpu_impl>(registrar, RecoverIndexLauncher::TASK_NAME);
 }
