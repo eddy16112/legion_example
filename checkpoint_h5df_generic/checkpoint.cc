@@ -117,7 +117,7 @@ void top_level_task(const Task *task,
                           WRITE_DISCARD, EXCLUSIVE, input_lr_1));
   init_launcher.region_requirements[0].add_field(FID_X);
   fumap = runtime->execute_index_space(ctx, init_launcher);
-  fumap.wait_all_results();
+ // fumap.wait_all_results();
   }
   {
   IndexLauncher init_launcher(INIT_TASK_ID, color_is, 
@@ -127,7 +127,7 @@ void top_level_task(const Task *task,
                           WRITE_DISCARD, EXCLUSIVE, input_lr_1));
   init_launcher.region_requirements[0].add_field(FID_Y);
   fumap = runtime->execute_index_space(ctx, init_launcher);
-  fumap.wait_all_results();
+//  fumap.wait_all_results();
   }
   {
   IndexLauncher init_launcher(INIT_TASK_ID, color_is, 
@@ -137,7 +137,7 @@ void top_level_task(const Task *task,
                           WRITE_DISCARD, EXCLUSIVE, input_lr_2));
   init_launcher.region_requirements[0].add_field(FID_Z);
   fumap = runtime->execute_index_space(ctx, init_launcher);
-  fumap.wait_all_results();
+  //fumap.wait_all_results();
   }
   {
   IndexLauncher init_launcher(INIT_TASK_ID, color_is, 
@@ -147,7 +147,7 @@ void top_level_task(const Task *task,
                           WRITE_DISCARD, EXCLUSIVE, input_lr_2));
   init_launcher.region_requirements[0].add_field(FID_W);
   fumap = runtime->execute_index_space(ctx, init_launcher);
-  fumap.wait_all_results();
+  //fumap.wait_all_results();
   }
   
   runtime->issue_execution_fence(ctx);
