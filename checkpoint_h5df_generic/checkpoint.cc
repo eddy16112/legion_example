@@ -156,6 +156,8 @@ void top_level_task(const Task *task,
   std::map<FieldID, std::string> field_string_map;
   field_string_map[FID_X] = "FID_X";
   field_string_map[FID_Y] = "FID_Y";
+  field_string_map[FID_Z] = "FID_Z";
+  field_string_map[FID_W] = "FID_W";
   /*
   struct task_args_s task_arg;
   strcpy(task_arg.file_name, file_name);
@@ -173,10 +175,17 @@ void top_level_task(const Task *task,
                           READ_ONLY, EXCLUSIVE, input_lr_1));
   checkpoint_launcher.region_requirements[0].add_field(FID_X);
   checkpoint_launcher.region_requirements[0].add_field(FID_Y);
+  
+  checkpoint_launcher.add_region_requirement(
+        RegionRequirement(file_checkpoint_lp_input_2, 0/*projection ID*/, 
+                          READ_ONLY, EXCLUSIVE, input_lr_2));
+  checkpoint_launcher.region_requirements[1].add_field(FID_Z);
+  checkpoint_launcher.region_requirements[1].add_field(FID_W);
+  
   fumap = runtime->execute_index_space(ctx, checkpoint_launcher);
   fumap.wait_all_results();
 
-#if 1  
+#if 0  
   std::map<FieldID, std::string> field_string_map2;
   field_string_map2[FID_Z] = "FID_Z";
   field_string_map2[FID_W] = "FID_W";
