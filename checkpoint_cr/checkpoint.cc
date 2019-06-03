@@ -21,7 +21,7 @@ enum FieldIDs {
   FID_X,
 };
 
-#define USE_CR
+//#define USE_CR
 
 bool generate_disk_file(const char *file_name, int num_elements)
 {

@@ -49,4 +49,6 @@ public:
   static const int TASK_ID = 199;
 };
 
+bool generate_hdf_file(const char *file_name, bool new_file, std::map<FieldID, std::string> &field_string_map, int num_elements);
+
 #endif

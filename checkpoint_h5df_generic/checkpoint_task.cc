@@ -1,9 +1,20 @@
+#include <fstream>
 #include <hdf5.h>
 #include "checkpoint_task.h"
 
-bool generate_hdf_file(const char *file_name, std::map<FieldID, std::string> &field_string_map, int num_elements)
+bool is_file_exist (char* file_name) {
+    std::ifstream f(file_name);
+    return f.good();
+}
+
+bool generate_hdf_file(const char *file_name, bool new_file, std::map<FieldID, std::string> &field_string_map, int num_elements)
 {
-  hid_t file_id = H5Fcreate(file_name, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+  hid_t file_id;
+  if (new_file) {
+    file_id = H5Fcreate(file_name, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT); 
+  } else {
+    file_id = H5Fopen(file_name, H5F_ACC_RDWR, H5P_DEFAULT);
+  }
   if(file_id < 0) {
     printf("H5Fcreate failed: %lld\n", (long long)file_id);
     return false;
@@ -33,6 +44,7 @@ bool generate_hdf_file(const char *file_name, std::map<FieldID, std::string> &fi
 
   // close things up - attach will reopen later
   H5Sclose(dataspace_id);
+  H5Fflush(file_id, H5F_SCOPE_LOCAL);
   H5Fclose(file_id);
   return true;
 }
@@ -92,8 +104,12 @@ void CheckpointIndexLauncher::cpu_impl(const Task *task, const std::vector<Physi
   LogicalRegion cp_lr = runtime->create_logical_region(ctx, input_lr.get_index_space(), input_lr.get_field_space());
   
   // create the HDF5 file first - attach wants it to already exist
-  ok = generate_hdf_file(file_name, field_string_map, rect.volume());
-  assert(ok);
+  bool new_file = true;
+  if (is_file_exist(file_name)) {
+   // new_file = false;
+  }
+  //ok = generate_hdf_file(file_name, new_file, field_string_map, rect.volume());
+  //assert(ok);
   AttachLauncher hdf5_attach_launcher(EXTERNAL_HDF5_FILE, cp_lr, cp_lr);
   std::map<FieldID,const char*> field_map;
   for (std::map<FieldID, std::string>::iterator it = field_string_map.begin() ; it != field_string_map.end(); ++it) {
