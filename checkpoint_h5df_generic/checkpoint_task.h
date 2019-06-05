@@ -57,18 +57,20 @@ public:
   LogicalRegion logical_region;
   std::string logical_region_name;
   std::map<FieldID, std::string> field_string_map;
+  size_t dim_size[3];
 };
 
 class HDF5File
 {
 public:
-  HDF5File(const char* file_name);
-  HDF5File(std::string file_name);
+  HDF5File(const char* file_name, int num_files);
+  HDF5File(std::string file_name, int num_files);
   void add_logical_region(LogicalRegion lr, std::string lr_name, std::map<FieldID, std::string> field_string_map);
-  bool generate_hdf5_file(int num_elements);
+  bool generate_hdf5_file(int file_idx);
   
 public:
   std::string file_name;
+  int num_files;
   std::vector<HDF5LogicalRegion> logical_region_vector;
 };
 

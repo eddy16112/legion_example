@@ -241,16 +241,24 @@ void RecoverIndexLauncher::register_task(void)
 HDF5LogicalRegion::HDF5LogicalRegion(LogicalRegion lr, std::string lr_name, std::map<FieldID, std::string> &field_string_map)
   :logical_region(lr), logical_region_name(lr_name), field_string_map(field_string_map)
 {
+  Runtime *runtime = Runtime::get_runtime();
+  Context ctx = Runtime::get_context();
+  if (lr.get_dim() == 1) {
+    Domain domain = runtime->get_index_space_domain(ctx, lr.get_index_space());
+    dim_size[0] = domain.get_volume();
+    printf("ID logical region size %ld\n", dim_size[0]);
+  } else {
+    assert(0);
+  }
 }
 
-HDF5File::HDF5File(const char* file_name)
-  :file_name(std::string(file_name))
+HDF5File::HDF5File(const char* file_name, int num_files)
+  :HDF5File(std::string(file_name), num_files)
 {
-  logical_region_vector.clear();  
 }
 
-HDF5File::HDF5File(std::string file_name)
-  :file_name(file_name)
+HDF5File::HDF5File(std::string file_name, int num_files)
+  :file_name(file_name), num_files(num_files)
 {
   logical_region_vector.clear();  
 }
@@ -261,11 +269,12 @@ void HDF5File::add_logical_region(LogicalRegion lr, std::string lr_name, std::ma
   logical_region_vector.push_back(h5_lr);
 }
 
-bool HDF5File::generate_hdf5_file(int num_elements)
+bool HDF5File::generate_hdf5_file(int file_idx)
 {
   hid_t file_id;
 
-  file_id = H5Fcreate(file_name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT); 
+  std::string fname = file_name + std::to_string(file_idx);
+  file_id = H5Fcreate(fname.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT); 
   if(file_id < 0) {
     printf("H5Fcreate failed: %lld\n", (long long)file_id);
     return false;
@@ -273,9 +282,9 @@ bool HDF5File::generate_hdf5_file(int num_elements)
 
   for (std::vector<HDF5LogicalRegion>::iterator lr_it = logical_region_vector.begin(); lr_it != logical_region_vector.end(); ++lr_it) {
     hid_t dataspace_id = -1;
-    if ((*lr_it).logical_region.get_dim() == 1) {
+    if ((*lr_it).logical_region.get_index_space().get_dim() == 1) {
       hsize_t dims[1];
-      dims[0] = num_elements;
+      dims[0] = (*lr_it).dim_size[0] / num_files;
       dataspace_id = H5Screate_simple(1, dims, NULL);
     } else {
       assert(0);
@@ -285,6 +294,15 @@ bool HDF5File::generate_hdf5_file(int num_elements)
       H5Fclose(file_id);
       return false;
     }
+#if 0
+    hid_t group_id = H5Gcreate2(file_id, (*lr_it).logical_region_name.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    if (group_id < 0) {
+      printf("H5Gcreate2 failed: %lld\n", (long long)group_id);
+      H5Sclose(dataspace_id);
+      H5Fclose(file_id);
+      return false;
+    }
+#endif
     for (std::map<FieldID, std::string>::iterator it = (*lr_it).field_string_map.begin() ; it != (*lr_it).field_string_map.end(); ++it) {
       const char* dataset_name = (it->second).c_str();
       hid_t dataset = H5Dcreate2(file_id, dataset_name,
@@ -292,13 +310,14 @@ bool HDF5File::generate_hdf5_file(int num_elements)
     			     H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
       if(dataset < 0) {
         printf("H5Dcreate2 failed: %lld\n", (long long)dataset);
+    //    H5Gclose(group_id);
         H5Sclose(dataspace_id);
         H5Fclose(file_id);
         return false;
       }
       H5Dclose(dataset);
     }
-
+ //   H5Gclose(group_id);
     H5Sclose(dataspace_id);
   }
   H5Fflush(file_id, H5F_SCOPE_LOCAL);

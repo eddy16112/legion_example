@@ -118,13 +118,11 @@ void top_level_task(const Task *task,
     field_string_map_2[FID_Z] = "FID_Z";
     field_string_map_2[FID_W] = "FID_W";
   
+    HDF5File checkpoint_file(file_name, num_files);
+    checkpoint_file.add_logical_region(input_lr_1, "input_lr_1", field_string_map_1);
+    checkpoint_file.add_logical_region(input_lr_2, "input_lr_2", field_string_map_2);
     for (int i = 0; i < num_files; i++) {
-      std::string fname(file_name);
-      fname = fname + std::to_string(i);
-      HDF5File checkpoint_file(fname);
-      checkpoint_file.add_logical_region(input_lr_1, "input_lr_1", field_string_map_1);
-      checkpoint_file.add_logical_region(input_lr_2, "input_lr_2", field_string_map_2);
-      checkpoint_file.generate_hdf5_file(num_elements/num_files);
+      checkpoint_file.generate_hdf5_file(i);
     }
   }
 #endif
@@ -247,14 +245,14 @@ void top_level_task(const Task *task,
   
   // *************************** check result ********************  
   {
-  IndexLauncher check_launcher(CHECK_TASK_ID, color_is, 
-                              TaskArgument(NULL, 0), arg_map);
-  check_launcher.add_region_requirement(
-        RegionRequirement(output_lp_1, 0/*projection ID*/, 
-                          READ_ONLY, EXCLUSIVE, output_lr_1));
-  check_launcher.region_requirements[0].add_field(FID_X);
-  fumap = runtime->execute_index_space(ctx, check_launcher);
-  fumap.wait_all_results();
+    IndexLauncher check_launcher(CHECK_TASK_ID, color_is, 
+                                TaskArgument(NULL, 0), arg_map);
+    check_launcher.add_region_requirement(
+          RegionRequirement(output_lp_1, 0/*projection ID*/, 
+                            READ_ONLY, EXCLUSIVE, output_lr_1));
+    check_launcher.region_requirements[0].add_field(FID_X);
+    fumap = runtime->execute_index_space(ctx, check_launcher);
+    fumap.wait_all_results();
   }
   {
     IndexLauncher check_launcher(CHECK_TASK_ID, color_is, 
