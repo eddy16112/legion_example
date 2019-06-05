@@ -49,6 +49,29 @@ public:
   static const int TASK_ID = 199;
 };
 
+class HDF5LogicalRegion
+{
+public:
+  HDF5LogicalRegion(LogicalRegion lr, std::string lr_name, std::map<FieldID, std::string> &field_string_map);
+public:
+  LogicalRegion logical_region;
+  std::string logical_region_name;
+  std::map<FieldID, std::string> field_string_map;
+};
+
+class HDF5File
+{
+public:
+  HDF5File(const char* file_name);
+  HDF5File(std::string file_name);
+  void add_logical_region(LogicalRegion lr, std::string lr_name, std::map<FieldID, std::string> field_string_map);
+  bool generate_hdf5_file(int num_elements);
+  
+public:
+  std::string file_name;
+  std::vector<HDF5LogicalRegion> logical_region_vector;
+};
+
 bool generate_hdf_file(const char *file_name, bool new_file, std::map<FieldID, std::string> &field_string_map, int num_elements);
 
 #endif

@@ -237,3 +237,71 @@ void RecoverIndexLauncher::register_task(void)
   registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
   Runtime::preregister_task_variant<cpu_impl>(registrar, RecoverIndexLauncher::TASK_NAME);
 }
+
+HDF5LogicalRegion::HDF5LogicalRegion(LogicalRegion lr, std::string lr_name, std::map<FieldID, std::string> &field_string_map)
+  :logical_region(lr), logical_region_name(lr_name), field_string_map(field_string_map)
+{
+}
+
+HDF5File::HDF5File(const char* file_name)
+  :file_name(std::string(file_name))
+{
+  logical_region_vector.clear();  
+}
+
+HDF5File::HDF5File(std::string file_name)
+  :file_name(file_name)
+{
+  logical_region_vector.clear();  
+}
+
+void HDF5File::add_logical_region(LogicalRegion lr, std::string lr_name, std::map<FieldID, std::string> field_string_map)
+{
+  HDF5LogicalRegion h5_lr(lr, lr_name, field_string_map);
+  logical_region_vector.push_back(h5_lr);
+}
+
+bool HDF5File::generate_hdf5_file(int num_elements)
+{
+  hid_t file_id;
+
+  file_id = H5Fcreate(file_name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT); 
+  if(file_id < 0) {
+    printf("H5Fcreate failed: %lld\n", (long long)file_id);
+    return false;
+  }
+
+  for (std::vector<HDF5LogicalRegion>::iterator lr_it = logical_region_vector.begin(); lr_it != logical_region_vector.end(); ++lr_it) {
+    hid_t dataspace_id = -1;
+    if ((*lr_it).logical_region.get_dim() == 1) {
+      hsize_t dims[1];
+      dims[0] = num_elements;
+      dataspace_id = H5Screate_simple(1, dims, NULL);
+    } else {
+      assert(0);
+    }
+    if(dataspace_id < 0) {
+      printf("H5Screate_simple failed: %lld\n", (long long)dataspace_id);
+      H5Fclose(file_id);
+      return false;
+    }
+    for (std::map<FieldID, std::string>::iterator it = (*lr_it).field_string_map.begin() ; it != (*lr_it).field_string_map.end(); ++it) {
+      const char* dataset_name = (it->second).c_str();
+      hid_t dataset = H5Dcreate2(file_id, dataset_name,
+    			     H5T_IEEE_F64LE, dataspace_id,
+    			     H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+      if(dataset < 0) {
+        printf("H5Dcreate2 failed: %lld\n", (long long)dataset);
+        H5Sclose(dataspace_id);
+        H5Fclose(file_id);
+        return false;
+      }
+      H5Dclose(dataset);
+    }
+
+    H5Sclose(dataspace_id);
+  }
+  H5Fflush(file_id, H5F_SCOPE_LOCAL);
+  H5Fclose(file_id);
+  return true;
+}

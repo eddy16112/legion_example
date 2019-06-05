@@ -46,25 +46,6 @@ void top_level_task(const Task *task,
 	      strcpy(file_name, command_args.argv[++i]);
     }
   }
-  
-  int my_rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-  
-  if (my_rank == 0) {   
-    std::map<FieldID, std::string> field_string_map;
-    field_string_map[FID_X] = "FID_X";
-    field_string_map[FID_Y] = "FID_Y";
-    field_string_map[FID_Z] = "FID_Z";
-    field_string_map[FID_W] = "FID_W";
-  
-    for (int i = 0; i < num_files; i++) {
-      std::string fname(file_name);
-      fname = fname + std::to_string(i);
-      char *file_name_shard = const_cast<char*>(fname.c_str());
-      generate_hdf_file(file_name_shard, true, field_string_map, num_elements/num_files);
-    }
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
 
   printf("Running for %d elements...\n", num_elements);
 
@@ -105,6 +86,49 @@ void top_level_task(const Task *task,
   LogicalRegion input_lr_2 = runtime->create_logical_region(ctx, is, input_fs_2);
   LogicalPartition input_lp_2 = runtime->get_logical_partition(ctx, input_lr_2, ip);
   LogicalPartition file_checkpoint_lp_input_2 = runtime->get_logical_partition(ctx, input_lr_2, file_ip);
+  
+  LogicalRegion output_lr_2 = runtime->create_logical_region(ctx, is, input_fs_2);
+  LogicalPartition output_lp_2 = runtime->get_logical_partition(ctx, output_lr_2, ip);
+  LogicalPartition file_recover_lp_output_2 = runtime->get_logical_partition(ctx, output_lr_2, file_ip);
+  
+  // **************** create hdf5 files *****************
+  int my_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+#if 0  
+  if (my_rank == 0) {   
+    std::map<FieldID, std::string> field_string_map;
+    field_string_map[FID_X] = "FID_X";
+    field_string_map[FID_Y] = "FID_Y";
+    field_string_map[FID_Z] = "FID_Z";
+    field_string_map[FID_W] = "FID_W";
+  
+    for (int i = 0; i < num_files; i++) {
+      std::string fname(file_name);
+      fname = fname + std::to_string(i);
+      char *file_name_shard = const_cast<char*>(fname.c_str());
+      generate_hdf_file(file_name_shard, true, field_string_map, num_elements/num_files);
+    }
+  }
+#else
+  if (my_rank == 0) {   
+    std::map<FieldID, std::string> field_string_map_1;
+    field_string_map_1[FID_X] = "FID_X";
+    field_string_map_1[FID_Y] = "FID_Y";
+    std::map<FieldID, std::string> field_string_map_2;
+    field_string_map_2[FID_Z] = "FID_Z";
+    field_string_map_2[FID_W] = "FID_W";
+  
+    for (int i = 0; i < num_files; i++) {
+      std::string fname(file_name);
+      fname = fname + std::to_string(i);
+      HDF5File checkpoint_file(fname);
+      checkpoint_file.add_logical_region(input_lr_1, "input_lr_1", field_string_map_1);
+      checkpoint_file.add_logical_region(input_lr_2, "input_lr_2", field_string_map_2);
+      checkpoint_file.generate_hdf5_file(num_elements/num_files);
+    }
+  }
+#endif
+  MPI_Barrier(MPI_COMM_WORLD);
 
   // **************** init task *************************
   FutureMap fumap;
@@ -209,6 +233,13 @@ void top_level_task(const Task *task,
                           WRITE_DISCARD, EXCLUSIVE, output_lr_1));
   recover_launcher.region_requirements[0].add_field(FID_X);
   recover_launcher.region_requirements[0].add_field(FID_Y);
+#if 0  
+  recover_launcher.add_region_requirement(
+        RegionRequirement(file_recover_lp_output_2, 0/*projection ID*/, 
+                          WRITE_DISCARD, EXCLUSIVE, output_lr_2));
+  recover_launcher.region_requirements[1].add_field(FID_Z);
+ // recover_launcher.region_requirements[1].add_field(FID_W);
+#endif  
   fumap = runtime->execute_index_space(ctx, recover_launcher);
   fumap.wait_all_results();
   runtime->issue_execution_fence(ctx);
@@ -235,11 +266,24 @@ void top_level_task(const Task *task,
     fumap = runtime->execute_index_space(ctx, check_launcher);
     fumap.wait_all_results();
   }
+#if 0
+  {
+    IndexLauncher check_launcher(CHECK_TASK_ID, color_is, 
+                                TaskArgument(NULL, 0), arg_map);
+    check_launcher.add_region_requirement(
+          RegionRequirement(output_lp_2, 0/*projection ID*/, 
+                            READ_ONLY, EXCLUSIVE, output_lr_2));
+    check_launcher.region_requirements[0].add_field(FID_Z);
+    fumap = runtime->execute_index_space(ctx, check_launcher);
+    fumap.wait_all_results();
+  }
+#endif
   runtime->issue_execution_fence(ctx);
 
   runtime->destroy_logical_region(ctx, input_lr_1);
   runtime->destroy_logical_region(ctx, input_lr_2);
   runtime->destroy_logical_region(ctx, output_lr_1);
+  runtime->destroy_logical_region(ctx, output_lr_2);
   runtime->destroy_field_space(ctx, input_fs);
   runtime->destroy_field_space(ctx, input_fs_2);
   runtime->destroy_index_space(ctx, color_is);
