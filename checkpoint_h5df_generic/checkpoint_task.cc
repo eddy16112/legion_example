@@ -248,7 +248,9 @@ HDF5LogicalRegion::HDF5LogicalRegion(LogicalRegion lr, std::string lr_name, std:
     dim_size[0] = domain.get_volume();
     printf("ID logical region size %ld\n", dim_size[0]);
   } else {
-    assert(0);
+    Domain domain = runtime->get_index_space_domain(ctx, lr.get_index_space());
+    dim_size[0] = domain.get_volume();
+    printf("2D ID logical region size %ld\n", dim_size[0]);
   }
 }
 
@@ -287,7 +289,9 @@ bool HDF5File::generate_hdf5_file(int file_idx)
       dims[0] = (*lr_it).dim_size[0] / num_files;
       dataspace_id = H5Screate_simple(1, dims, NULL);
     } else {
-      assert(0);
+      hsize_t dims[1];
+      dims[0] = (*lr_it).dim_size[0] / num_files;
+      dataspace_id = H5Screate_simple(1, dims, NULL);
     }
     if(dataspace_id < 0) {
       printf("H5Screate_simple failed: %lld\n", (long long)dataspace_id);
