@@ -152,7 +152,56 @@ void CheckpointIndexLauncher::attach_impl(const Task *task, const std::vector<Ph
 
 void CheckpointIndexLauncher::no_attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime)
 {
+  struct task_args_s task_arg = *(struct task_args_s *) task->args;
   
+  const int point = task->index_point.point_data[0];
+  
+  std::map<FieldID, std::string> field_string_map;
+  Realm::Serialization::FixedBufferDeserializer fdb(task_arg.field_map_serial, task_arg.field_map_size);
+  bool ok  = fdb >> field_string_map;
+  if(!ok) {
+    printf("task args deserializer error\n");
+  }
+  
+  std::string fname(task_arg.file_name);
+  fname = fname + std::to_string(point);
+  char *file_name = const_cast<char*>(fname.c_str());
+  
+  hid_t file_id;
+  file_id = H5Fopen(file_name, H5F_ACC_RDWR, H5P_DEFAULT); 
+  if(file_id < 0) {
+    printf("H5Fopen failed: %lld\n", (long long)file_id);
+    assert(0);
+  }
+  
+  for (unsigned int rid = 0; rid < regions.size(); rid++) {
+    LogicalRegion input_lr = regions[rid].get_logical_region();
+
+    std::set<FieldID> field_set = task->regions[rid].privilege_fields;  
+    std::map<FieldID, std::string>::iterator map_it;
+    for (std::set<FieldID>::iterator it = field_set.begin() ; it != field_set.end(); ++it) {
+      map_it = field_string_map.find(*it);
+      if (map_it != field_string_map.end()) {
+        const FieldAccessor<READ_ONLY,double,1,coord_t, Realm::AffineAccessor<double,1,coord_t> > acc_fid(regions[rid], *it);
+        Rect<1> rect = runtime->get_index_space_domain(ctx, task->regions[rid].region.get_index_space());
+        const double *dset_data = acc_fid.ptr(rect.lo);
+        hid_t dataset_id = H5Dopen2(file_id, (map_it->second).c_str(), H5P_DEFAULT);
+        if(dataset_id < 0) {
+          printf("H5Dopen2 failed: %lld\n", (long long)dataset_id);
+          H5Fclose(file_id);
+          assert(0);
+        }
+        H5Dwrite(dataset_id, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, dset_data);
+        H5Dclose(dataset_id);
+      } else {
+        assert(0);
+      }
+    }
+    printf("Checkpointing data to HDF5 file no attach '%s' region %d, (datasets='%ld')\n", file_name, rid, field_set.size());
+  }
+  
+  H5Fflush(file_id, H5F_SCOPE_LOCAL);
+  H5Fclose(file_id);
 }
 
 /*static*/
@@ -262,7 +311,52 @@ void RecoverIndexLauncher::attach_impl(const Task *task, const std::vector<Physi
 
 void RecoverIndexLauncher::no_attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime)
 {
+  const int point = task->index_point.point_data[0];
   
+  struct task_args_s task_arg = *(struct task_args_s *) task->args;
+  std::map<FieldID, std::string> field_string_map;
+  Realm::Serialization::FixedBufferDeserializer fdb(task_arg.field_map_serial, task_arg.field_map_size);
+  bool ok  = fdb >> field_string_map;
+  if(!ok) {
+    printf("task args deserializer error\n");
+  }
+  
+  std::string fname(task_arg.file_name);
+  fname = fname + std::to_string(point);
+  char *file_name = const_cast<char*>(fname.c_str());
+  
+  hid_t file_id;
+  file_id = H5Fopen(file_name, H5F_ACC_RDWR, H5P_DEFAULT); 
+  if(file_id < 0) {
+    printf("H5Fopen failed: %lld\n", (long long)file_id);
+    assert(0);
+  }
+  
+  for (unsigned int rid = 0; rid < regions.size(); rid++) {
+    LogicalRegion input_lr2 = regions[rid].get_logical_region();
+
+    std::set<FieldID> field_set = task->regions[rid].privilege_fields;  
+    std::map<FieldID, std::string>::iterator map_it;
+    for (std::set<FieldID>::iterator it = field_set.begin() ; it != field_set.end(); ++it) {
+      map_it = field_string_map.find(*it);
+      if (map_it != field_string_map.end()) {
+        const FieldAccessor<WRITE_DISCARD,double,1,coord_t, Realm::AffineAccessor<double,1,coord_t> > acc_fid(regions[rid], *it);
+        Rect<1> rect = runtime->get_index_space_domain(ctx, task->regions[rid].region.get_index_space());
+        double *dset_data = acc_fid.ptr(rect.lo);
+        hid_t dataset_id = H5Dopen2(file_id, (map_it->second).c_str(), H5P_DEFAULT);
+        if(dataset_id < 0) {
+          printf("H5Dopen2 failed: %lld\n", (long long)dataset_id);
+          H5Fclose(file_id);
+          assert(0);
+        }
+        H5Dread(dataset_id, H5T_IEEE_F64LE, H5S_ALL, H5S_ALL, H5P_DEFAULT, dset_data);
+        H5Dclose(dataset_id);
+      } else {
+        assert(0);
+      }
+    }
+    printf("Recoverring data to HDF5 file no attach '%s' region %d, (datasets='%ld')\n", file_name, rid, field_set.size());
+  }
 }
 
 /*static*/
