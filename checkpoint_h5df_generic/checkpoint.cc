@@ -119,8 +119,8 @@ void top_level_task(const Task *task,
     field_string_map_2[FID_W] = "FID_W";
   
     HDF5File checkpoint_file(file_name, num_files);
-    checkpoint_file.add_logical_region(input_lr_1, "input_lr_1", field_string_map_1);
-    checkpoint_file.add_logical_region(input_lr_2, "input_lr_2", field_string_map_2);
+    checkpoint_file.add_logical_region(input_lr_1, file_checkpoint_lp_input_1, "input_lr_1", field_string_map_1);
+    checkpoint_file.add_logical_region(input_lr_2, file_checkpoint_lp_input_2, "input_lr_2", field_string_map_2);
     for (int i = 0; i < num_files; i++) {
       checkpoint_file.generate_hdf5_file(i);
     }

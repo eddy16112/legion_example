@@ -50,7 +50,7 @@ void top_level_task(const Task *task,
   printf("Running for %d elements...\n", num_elements);
 
   Point<2> lo(0, 0);
-  Point<2> hi(num_elements-1, num_elements-1);
+  Point<2> hi(num_elements-1, num_subregions-1);
   const Rect<2> elem_rect(lo, hi);
   IndexSpace is = runtime->create_index_space(ctx, elem_rect);
   FieldSpace input_fs = runtime->create_field_space(ctx);
@@ -68,7 +68,18 @@ void top_level_task(const Task *task,
   
   Rect<1> file_color_bounds(0,num_files-1);
   IndexSpace file_is = runtime->create_index_space(ctx, file_color_bounds);
-  IndexPartition file_ip = runtime->create_equal_partition(ctx, is, file_is);
+  //IndexPartition file_ip = runtime->create_equal_partition(ctx, is, file_is);
+  IndexPartition file_ip = runtime->create_pending_partition(ctx, is, file_is);
+  int idx = 0; 
+  for (int point = 0; point < num_files; point++) {
+    std::vector<IndexSpace> subspaces;
+    for (int i = 0; i < num_subregions/num_files; i++) {
+      subspaces.push_back(runtime->get_index_subspace(ctx, ip, idx));
+      idx ++;
+    }
+    runtime->create_index_space_union(ctx, file_ip, point, subspaces);
+  }
+  
   
   LogicalRegion input_lr_1 = runtime->create_logical_region(ctx, is, input_fs);
   LogicalPartition input_lp_1 = runtime->get_logical_partition(ctx, input_lr_1, ip);
@@ -87,7 +98,7 @@ void top_level_task(const Task *task,
     field_string_map_1[FID_Y] = "FID_Y";
   
     HDF5File checkpoint_file(file_name, num_files);
-    checkpoint_file.add_logical_region(input_lr_1, "input_lr_1", field_string_map_1);
+    checkpoint_file.add_logical_region(input_lr_1, file_checkpoint_lp_input_1, "input_lr_1", field_string_map_1);
     for (int i = 0; i < num_files; i++) {
       checkpoint_file.generate_hdf5_file(i);
     }

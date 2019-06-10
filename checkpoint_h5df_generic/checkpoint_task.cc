@@ -238,8 +238,8 @@ void RecoverIndexLauncher::register_task(void)
   Runtime::preregister_task_variant<cpu_impl>(registrar, RecoverIndexLauncher::TASK_NAME);
 }
 
-HDF5LogicalRegion::HDF5LogicalRegion(LogicalRegion lr, std::string lr_name, std::map<FieldID, std::string> &field_string_map)
-  :logical_region(lr), logical_region_name(lr_name), field_string_map(field_string_map)
+HDF5LogicalRegion::HDF5LogicalRegion(LogicalRegion lr, LogicalPartition lp, std::string lr_name, std::map<FieldID, std::string> &field_string_map)
+  :logical_region(lr), logical_partition(lp), logical_region_name(lr_name), field_string_map(field_string_map)
 {
   Runtime *runtime = Runtime::get_runtime();
   Context ctx = Runtime::get_context();
@@ -265,9 +265,9 @@ HDF5File::HDF5File(std::string file_name, int num_files)
   logical_region_vector.clear();  
 }
 
-void HDF5File::add_logical_region(LogicalRegion lr, std::string lr_name, std::map<FieldID, std::string> field_string_map)
+void HDF5File::add_logical_region(LogicalRegion lr, LogicalPartition lp, std::string lr_name, std::map<FieldID, std::string> field_string_map)
 {
-  HDF5LogicalRegion h5_lr(lr, lr_name, field_string_map);
+  HDF5LogicalRegion h5_lr(lr, lp, lr_name, field_string_map);
   logical_region_vector.push_back(h5_lr);
 }
 
@@ -281,16 +281,23 @@ bool HDF5File::generate_hdf5_file(int file_idx)
     printf("H5Fcreate failed: %lld\n", (long long)file_id);
     return false;
   }
+  
+  Runtime *runtime = Runtime::get_runtime();
+  Context ctx = Runtime::get_context();
 
   for (std::vector<HDF5LogicalRegion>::iterator lr_it = logical_region_vector.begin(); lr_it != logical_region_vector.end(); ++lr_it) {
     hid_t dataspace_id = -1;
     if ((*lr_it).logical_region.get_index_space().get_dim() == 1) {
+      LogicalRegion sub_lr = runtime->get_logical_subregion_by_color(ctx, (*lr_it).logical_partition, file_idx);
+      Domain domain = runtime->get_index_space_domain(ctx, sub_lr.get_index_space());
       hsize_t dims[1];
-      dims[0] = (*lr_it).dim_size[0] / num_files;
+      dims[0] = domain.get_volume();
       dataspace_id = H5Screate_simple(1, dims, NULL);
     } else {
+      LogicalRegion sub_lr = runtime->get_logical_subregion_by_color(ctx, (*lr_it).logical_partition, file_idx);
+      Domain domain = runtime->get_index_space_domain(ctx, sub_lr.get_index_space());
       hsize_t dims[1];
-      dims[0] = (*lr_it).dim_size[0] / num_files;
+      dims[0] = domain.get_volume();
       dataspace_id = H5Screate_simple(1, dims, NULL);
     }
     if(dataspace_id < 0) {
