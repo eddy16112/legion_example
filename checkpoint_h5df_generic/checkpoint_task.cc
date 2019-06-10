@@ -57,7 +57,7 @@ CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, TaskArg
   global_arg = task_arg;
 }
 
-CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map)
+CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file)
   : IndexLauncher()
 {
   strcpy(task_argument.file_name, file_name);
@@ -66,6 +66,7 @@ CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, const c
   dbs << field_string_map;
   task_argument.field_map_size = dbs.bytes_used();
   memcpy(task_argument.field_map_serial, dbs.detach_buffer(), task_argument.field_map_size);
+  task_argument.attach_file_flag = attach_file;
   
   task_id = CheckpointIndexLauncher::TASK_ID;
   launch_space = launchspace;
@@ -73,8 +74,8 @@ CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, const c
 //  printf("filename %s, task_arg size %ld\n", task_argument.file_name, global_arg.get_size()); 
 }
 
-CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map)
-  : CheckpointIndexLauncher(launchspace, file_name.c_str(), field_string_map)
+CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file)
+  : CheckpointIndexLauncher(launchspace, file_name.c_str(), field_string_map, attach_file)
 { 
 }
 
@@ -83,9 +84,21 @@ const char * const CheckpointIndexLauncher::TASK_NAME = "checkpoint";
 
 void CheckpointIndexLauncher::cpu_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime)
 {
+  struct task_args_s task_arg = *(struct task_args_s *) task->args;
+  
+  if (task_arg.attach_file_flag == true) {
+    CheckpointIndexLauncher::attach_impl(task, regions, ctx, runtime);
+  } else {
+    CheckpointIndexLauncher::no_attach_impl(task, regions, ctx, runtime);
+  }
+}
+
+void CheckpointIndexLauncher::attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime)
+{
+  struct task_args_s task_arg = *(struct task_args_s *) task->args;
+  
   const int point = task->index_point.point_data[0];
   
-  struct task_args_s task_arg = *(struct task_args_s *) task->args;
   std::map<FieldID, std::string> field_string_map;
   Realm::Serialization::FixedBufferDeserializer fdb(task_arg.field_map_serial, task_arg.field_map_size);
   bool ok  = fdb >> field_string_map;
@@ -137,6 +150,11 @@ void CheckpointIndexLauncher::cpu_impl(const Task *task, const std::vector<Physi
   }
 }
 
+void CheckpointIndexLauncher::no_attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime)
+{
+  
+}
+
 /*static*/
 void CheckpointIndexLauncher::register_task(void)
 {
@@ -153,7 +171,7 @@ RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, TaskArgument 
   global_arg = task_arg;
 }
 
-RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map)
+RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file)
   : IndexLauncher()
 {
   strcpy(task_argument.file_name, file_name);
@@ -162,6 +180,7 @@ RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, const char* f
   dbs << field_string_map;
   task_argument.field_map_size = dbs.bytes_used();
   memcpy(task_argument.field_map_serial, dbs.detach_buffer(), task_argument.field_map_size);
+  task_argument.attach_file_flag = attach_file;
   
   task_id = RecoverIndexLauncher::TASK_ID;
   launch_space = launchspace;
@@ -169,8 +188,8 @@ RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, const char* f
 //  printf("filename %s, task_arg size %ld\n", task_argument.file_name, global_arg.get_size()); 
 }
 
-RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map)
-  : RecoverIndexLauncher(launchspace, file_name.c_str(), field_string_map)
+RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file)
+  : RecoverIndexLauncher(launchspace, file_name.c_str(), field_string_map, attach_file)
 { 
 }
 
@@ -178,6 +197,17 @@ RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, std::string f
 const char * const RecoverIndexLauncher::TASK_NAME = "recover";
 
 void RecoverIndexLauncher::cpu_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime)
+{
+  struct task_args_s task_arg = *(struct task_args_s *) task->args;
+  
+  if (task_arg.attach_file_flag == true) {
+    RecoverIndexLauncher::attach_impl(task, regions, ctx, runtime);
+  } else {
+    RecoverIndexLauncher::no_attach_impl(task, regions, ctx, runtime);
+  }
+}
+
+void RecoverIndexLauncher::attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime)
 {
   const int point = task->index_point.point_data[0];
   
@@ -228,6 +258,11 @@ void RecoverIndexLauncher::cpu_impl(const Task *task, const std::vector<Physical
     fu.wait();
     runtime->destroy_logical_region(ctx, restart_lr);
   }
+}
+
+void RecoverIndexLauncher::no_attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime)
+{
+  
 }
 
 /*static*/

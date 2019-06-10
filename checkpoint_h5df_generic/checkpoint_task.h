@@ -6,23 +6,26 @@
 using namespace Legion;
 
 struct task_args_s{
-  size_t field_map_size; 
+  size_t field_map_size;
   char field_map_serial[4096];
   char file_name[32];
+  bool attach_file_flag; 
 };
 
 class CheckpointIndexLauncher : public IndexLauncher
 {
 public:
   CheckpointIndexLauncher(IndexSpace launchspace, TaskArgument task_arg, ArgumentMap map);
-  CheckpointIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map);
-  CheckpointIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map);
+  CheckpointIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file=true);
+  CheckpointIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file=true);
 
 public:
   struct task_args_s task_argument;
   
 public:
   static void cpu_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime);
+  static void attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime);
+  static void no_attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime);  
   static void register_task(void);
   
 public:
@@ -34,14 +37,16 @@ class RecoverIndexLauncher : public IndexLauncher
 {
 public:
   RecoverIndexLauncher(IndexSpace launchspace, TaskArgument task_arg, ArgumentMap map);
-  RecoverIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map);
-  RecoverIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map);
+  RecoverIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file=true);
+  RecoverIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file=true);
 
 public:
   struct task_args_s task_argument;
   
 public:
   static void cpu_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime);
+  static void attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime);
+  static void no_attach_impl(const Task *task, const std::vector<PhysicalRegion> &regions, Context ctx, Runtime *runtime); 
   static void register_task(void);
   
 public:
