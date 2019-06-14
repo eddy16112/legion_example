@@ -191,7 +191,7 @@ void top_level_task(const Task *task,
   */
   
   //CheckpointIndexLauncher checkpoint_launcher(file_is, TaskArgument(&task_arg, sizeof(task_arg)), arg_map);
-  CheckpointIndexLauncher checkpoint_launcher(file_is, file_name, field_string_map, false);    
+  CheckpointIndexLauncher checkpoint_launcher(file_is, file_name, field_string_map, true);    
   checkpoint_launcher.add_region_requirement(
         RegionRequirement(file_checkpoint_lp_input_1, 0/*projection ID*/, 
                           READ_ONLY, EXCLUSIVE, input_lr_1));
