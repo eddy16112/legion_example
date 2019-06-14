@@ -128,7 +128,7 @@ void CheckpointIndexLauncher::attach_impl(const Task *task, const std::vector<Ph
         assert(0);
       }
     }
-    printf("Checkpointing data to HDF5 file '%s' region %d, (datasets='%ld'), vector size %ld\n", file_name, rid, field_map.size(), field_string_map_vector.size());
+    printf("Checkpointing data to HDF5 file attach '%s' region %d, (datasets='%ld'), vector size %ld\n", file_name, rid, field_map.size(), field_string_map_vector.size());
     hdf5_attach_launcher.attach_hdf5(file_name, field_map, LEGION_FILE_READ_WRITE);
     cp_pr = runtime->attach_external_resource(ctx, hdf5_attach_launcher);
    // cp_pr.wait_until_valid();
@@ -289,7 +289,7 @@ void RecoverIndexLauncher::attach_impl(const Task *task, const std::vector<Physi
         assert(0);
       }
     }
-    printf("Recoverring data to HDF5 file '%s' region %d, (datasets='%ld'), vector size %ld\n", file_name, rid, field_map.size(), field_string_map_vector.size());
+    printf("Recoverring data to HDF5 file attach '%s' region %d, (datasets='%ld'), vector size %ld\n", file_name, rid, field_map.size(), field_string_map_vector.size());
     hdf5_attach_launcher.attach_hdf5(file_name, field_map, LEGION_FILE_READ_WRITE);
     restart_pr = runtime->attach_external_resource(ctx, hdf5_attach_launcher);
 
