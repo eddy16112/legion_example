@@ -175,11 +175,15 @@ void top_level_task(const Task *task,
   runtime->issue_execution_fence(ctx);
   
   // ************************************ checkpoint ****************
-  std::map<FieldID, std::string> field_string_map;
-  field_string_map[FID_X] = "FID_X";
-  field_string_map[FID_Y] = "FID_Y";
-  field_string_map[FID_Z] = "FID_Z";
-  field_string_map[FID_W] = "FID_W";
+  std::map<FieldID, std::string> field_string_map_1;
+  field_string_map_1[FID_X] = "FID_X";
+  field_string_map_1[FID_Y] = "FID_Y";
+  std::map<FieldID, std::string> field_string_map_2;
+  field_string_map_2[FID_Z] = "FID_Z";
+  field_string_map_2[FID_W] = "FID_W";
+  std::vector<std::map<FieldID, std::string>> field_string_map_vector;
+  field_string_map_vector.push_back(field_string_map_1);
+  field_string_map_vector.push_back(field_string_map_2);
   /*
   struct task_args_s task_arg;
   strcpy(task_arg.file_name, file_name);
@@ -191,7 +195,7 @@ void top_level_task(const Task *task,
   */
   
   //CheckpointIndexLauncher checkpoint_launcher(file_is, TaskArgument(&task_arg, sizeof(task_arg)), arg_map);
-  CheckpointIndexLauncher checkpoint_launcher(file_is, file_name, field_string_map, true);    
+  CheckpointIndexLauncher checkpoint_launcher(file_is, file_name, field_string_map_vector, true);    
   checkpoint_launcher.add_region_requirement(
         RegionRequirement(file_checkpoint_lp_input_1, 0/*projection ID*/, 
                           READ_ONLY, EXCLUSIVE, input_lr_1));
@@ -224,8 +228,9 @@ void top_level_task(const Task *task,
   runtime->issue_execution_fence(ctx);
   
   // ************************************ restart ****************
+  
  // RecoverIndexLauncher restart_launcher(file_is, TaskArgument(&task_arg, sizeof(task_arg)), arg_map); 
-  RecoverIndexLauncher recover_launcher(file_is, file_name, field_string_map, false);  
+  RecoverIndexLauncher recover_launcher(file_is, file_name, field_string_map_vector, false);  
   recover_launcher.add_region_requirement(
         RegionRequirement(file_recover_lp_output_1, 0/*projection ID*/, 
                           WRITE_DISCARD, EXCLUSIVE, output_lr_1));

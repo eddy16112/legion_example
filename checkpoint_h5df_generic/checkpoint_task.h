@@ -16,8 +16,8 @@ class CheckpointIndexLauncher : public IndexLauncher
 {
 public:
   CheckpointIndexLauncher(IndexSpace launchspace, TaskArgument task_arg, ArgumentMap map);
-  CheckpointIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file=true);
-  CheckpointIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file=true);
+  CheckpointIndexLauncher(IndexSpace launchspace, const char* file_name, std::vector<std::map<FieldID, std::string>> &field_string_map_vector, bool attach_file=true);
+  CheckpointIndexLauncher(IndexSpace launchspace, std::string file_name, std::vector<std::map<FieldID, std::string>> &field_string_map_vector, bool attach_file=true);
 
 public:
   struct task_args_s task_argument;
@@ -37,8 +37,8 @@ class RecoverIndexLauncher : public IndexLauncher
 {
 public:
   RecoverIndexLauncher(IndexSpace launchspace, TaskArgument task_arg, ArgumentMap map);
-  RecoverIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file=true);
-  RecoverIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file=true);
+  RecoverIndexLauncher(IndexSpace launchspace, const char* file_name, std::vector<std::map<FieldID, std::string>> &field_string_map_vector, bool attach_file=true);
+  RecoverIndexLauncher(IndexSpace launchspace, std::string file_name, std::vector<std::map<FieldID, std::string>> &field_string_map_vector, bool attach_file=true);
 
 public:
   struct task_args_s task_argument;

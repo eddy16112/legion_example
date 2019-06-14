@@ -57,13 +57,13 @@ CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, TaskArg
   global_arg = task_arg;
 }
 
-CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file)
+CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, const char* file_name, std::vector<std::map<FieldID, std::string>> &field_string_map_vector, bool attach_file)
   : IndexLauncher()
 {
   strcpy(task_argument.file_name, file_name);
   
   Realm::Serialization::DynamicBufferSerializer dbs(0);
-  dbs << field_string_map;
+  dbs << field_string_map_vector;
   task_argument.field_map_size = dbs.bytes_used();
   memcpy(task_argument.field_map_serial, dbs.detach_buffer(), task_argument.field_map_size);
   task_argument.attach_file_flag = attach_file;
@@ -74,8 +74,8 @@ CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, const c
 //  printf("filename %s, task_arg size %ld\n", task_argument.file_name, global_arg.get_size()); 
 }
 
-CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file)
-  : CheckpointIndexLauncher(launchspace, file_name.c_str(), field_string_map, attach_file)
+CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, std::string file_name, std::vector<std::map<FieldID, std::string>> &field_string_map_vector, bool attach_file)
+  : CheckpointIndexLauncher(launchspace, file_name.c_str(), field_string_map_vector, attach_file)
 { 
 }
 
@@ -99,9 +99,9 @@ void CheckpointIndexLauncher::attach_impl(const Task *task, const std::vector<Ph
   
   const int point = task->index_point.point_data[0];
   
-  std::map<FieldID, std::string> field_string_map;
+  std::vector<std::map<FieldID, std::string>> field_string_map_vector;
   Realm::Serialization::FixedBufferDeserializer fdb(task_arg.field_map_serial, task_arg.field_map_size);
-  bool ok  = fdb >> field_string_map;
+  bool ok  = fdb >> field_string_map_vector;
   if(!ok) {
     printf("task args deserializer error\n");
   }
@@ -121,14 +121,14 @@ void CheckpointIndexLauncher::attach_impl(const Task *task, const std::vector<Ph
     std::set<FieldID> field_set = task->regions[rid].privilege_fields;  
     std::map<FieldID, std::string>::iterator map_it;
     for (std::set<FieldID>::iterator it = field_set.begin() ; it != field_set.end(); ++it) {
-      map_it = field_string_map.find(*it);
-      if (map_it != field_string_map.end()) {
+      map_it = field_string_map_vector[rid].find(*it);
+      if (map_it != field_string_map_vector[rid].end()) {
         field_map.insert(std::make_pair(*it, (map_it->second).c_str()));
       } else {
         assert(0);
       }
     }
-    printf("Checkpointing data to HDF5 file '%s' region %d, (datasets='%ld')\n", file_name, rid, field_map.size());
+    printf("Checkpointing data to HDF5 file '%s' region %d, (datasets='%ld'), vector size %ld\n", file_name, rid, field_map.size(), field_string_map_vector.size());
     hdf5_attach_launcher.attach_hdf5(file_name, field_map, LEGION_FILE_READ_WRITE);
     cp_pr = runtime->attach_external_resource(ctx, hdf5_attach_launcher);
    // cp_pr.wait_until_valid();
@@ -156,9 +156,9 @@ void CheckpointIndexLauncher::no_attach_impl(const Task *task, const std::vector
   
   const int point = task->index_point.point_data[0];
   
-  std::map<FieldID, std::string> field_string_map;
+  std::vector<std::map<FieldID, std::string>> field_string_map_vector;
   Realm::Serialization::FixedBufferDeserializer fdb(task_arg.field_map_serial, task_arg.field_map_size);
-  bool ok  = fdb >> field_string_map;
+  bool ok  = fdb >> field_string_map_vector;
   if(!ok) {
     printf("task args deserializer error\n");
   }
@@ -180,8 +180,8 @@ void CheckpointIndexLauncher::no_attach_impl(const Task *task, const std::vector
     std::set<FieldID> field_set = task->regions[rid].privilege_fields;  
     std::map<FieldID, std::string>::iterator map_it;
     for (std::set<FieldID>::iterator it = field_set.begin() ; it != field_set.end(); ++it) {
-      map_it = field_string_map.find(*it);
-      if (map_it != field_string_map.end()) {
+      map_it = field_string_map_vector[rid].find(*it);
+      if (map_it != field_string_map_vector[rid].end()) {
         const FieldAccessor<READ_ONLY,double,1,coord_t, Realm::AffineAccessor<double,1,coord_t> > acc_fid(regions[rid], *it);
         Rect<1> rect = runtime->get_index_space_domain(ctx, task->regions[rid].region.get_index_space());
         const double *dset_data = acc_fid.ptr(rect.lo);
@@ -197,7 +197,7 @@ void CheckpointIndexLauncher::no_attach_impl(const Task *task, const std::vector
         assert(0);
       }
     }
-    printf("Checkpointing data to HDF5 file no attach '%s' region %d, (datasets='%ld')\n", file_name, rid, field_set.size());
+    printf("Checkpointing data to HDF5 file no attach '%s' region %d, (datasets='%ld'), vector size %ld\n", file_name, rid, field_set.size(), field_string_map_vector.size());
   }
   
   H5Fflush(file_id, H5F_SCOPE_LOCAL);
@@ -220,13 +220,13 @@ RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, TaskArgument 
   global_arg = task_arg;
 }
 
-RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, const char* file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file)
+RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, const char* file_name, std::vector<std::map<FieldID, std::string>> &field_string_map_vector, bool attach_file)
   : IndexLauncher()
 {
   strcpy(task_argument.file_name, file_name);
   
   Realm::Serialization::DynamicBufferSerializer dbs(0);
-  dbs << field_string_map;
+  dbs << field_string_map_vector;
   task_argument.field_map_size = dbs.bytes_used();
   memcpy(task_argument.field_map_serial, dbs.detach_buffer(), task_argument.field_map_size);
   task_argument.attach_file_flag = attach_file;
@@ -237,8 +237,8 @@ RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, const char* f
 //  printf("filename %s, task_arg size %ld\n", task_argument.file_name, global_arg.get_size()); 
 }
 
-RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, std::string file_name, std::map<FieldID, std::string> &field_string_map, bool attach_file)
-  : RecoverIndexLauncher(launchspace, file_name.c_str(), field_string_map, attach_file)
+RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, std::string file_name, std::vector<std::map<FieldID, std::string>> &field_string_map_vector, bool attach_file)
+  : RecoverIndexLauncher(launchspace, file_name.c_str(), field_string_map_vector, attach_file)
 { 
 }
 
@@ -261,9 +261,9 @@ void RecoverIndexLauncher::attach_impl(const Task *task, const std::vector<Physi
   const int point = task->index_point.point_data[0];
   
   struct task_args_s task_arg = *(struct task_args_s *) task->args;
-  std::map<FieldID, std::string> field_string_map;
+  std::vector<std::map<FieldID, std::string>> field_string_map_vector;
   Realm::Serialization::FixedBufferDeserializer fdb(task_arg.field_map_serial, task_arg.field_map_size);
-  bool ok  = fdb >> field_string_map;
+  bool ok  = fdb >> field_string_map_vector;
   if(!ok) {
     printf("task args deserializer error\n");
   }
@@ -282,14 +282,14 @@ void RecoverIndexLauncher::attach_impl(const Task *task, const std::vector<Physi
     std::set<FieldID> field_set = task->regions[rid].privilege_fields;  
     std::map<FieldID, std::string>::iterator map_it;
     for (std::set<FieldID>::iterator it = field_set.begin() ; it != field_set.end(); ++it) {
-      map_it = field_string_map.find(*it);
-      if (map_it != field_string_map.end()) {
+      map_it = field_string_map_vector[rid].find(*it);
+      if (map_it != field_string_map_vector[rid].end()) {
         field_map.insert(std::make_pair(*it, (map_it->second).c_str()));
       } else {
         assert(0);
       }
     }
-    printf("Recoverring data to HDF5 file '%s' region %d, (datasets='%ld')\n", file_name, rid, field_map.size());
+    printf("Recoverring data to HDF5 file '%s' region %d, (datasets='%ld'), vector size %ld\n", file_name, rid, field_map.size(), field_string_map_vector.size());
     hdf5_attach_launcher.attach_hdf5(file_name, field_map, LEGION_FILE_READ_WRITE);
     restart_pr = runtime->attach_external_resource(ctx, hdf5_attach_launcher);
 
@@ -314,9 +314,9 @@ void RecoverIndexLauncher::no_attach_impl(const Task *task, const std::vector<Ph
   const int point = task->index_point.point_data[0];
   
   struct task_args_s task_arg = *(struct task_args_s *) task->args;
-  std::map<FieldID, std::string> field_string_map;
+  std::vector<std::map<FieldID, std::string>> field_string_map_vector;
   Realm::Serialization::FixedBufferDeserializer fdb(task_arg.field_map_serial, task_arg.field_map_size);
-  bool ok  = fdb >> field_string_map;
+  bool ok  = fdb >> field_string_map_vector;
   if(!ok) {
     printf("task args deserializer error\n");
   }
@@ -338,8 +338,8 @@ void RecoverIndexLauncher::no_attach_impl(const Task *task, const std::vector<Ph
     std::set<FieldID> field_set = task->regions[rid].privilege_fields;  
     std::map<FieldID, std::string>::iterator map_it;
     for (std::set<FieldID>::iterator it = field_set.begin() ; it != field_set.end(); ++it) {
-      map_it = field_string_map.find(*it);
-      if (map_it != field_string_map.end()) {
+      map_it = field_string_map_vector[rid].find(*it);
+      if (map_it != field_string_map_vector[rid].end()) {
         const FieldAccessor<WRITE_DISCARD,double,1,coord_t, Realm::AffineAccessor<double,1,coord_t> > acc_fid(regions[rid], *it);
         Rect<1> rect = runtime->get_index_space_domain(ctx, task->regions[rid].region.get_index_space());
         double *dset_data = acc_fid.ptr(rect.lo);
@@ -355,7 +355,7 @@ void RecoverIndexLauncher::no_attach_impl(const Task *task, const std::vector<Ph
         assert(0);
       }
     }
-    printf("Recoverring data to HDF5 file no attach '%s' region %d, (datasets='%ld')\n", file_name, rid, field_set.size());
+    printf("Recoverring data to HDF5 file no attach '%s' region %d, (datasets='%ld'), vector size %ld\n", file_name, rid, field_set.size(), field_string_map_vector.size());
   }
 }
 

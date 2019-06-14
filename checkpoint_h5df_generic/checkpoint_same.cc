@@ -164,50 +164,46 @@ void top_level_task(const Task *task,
   std::map<FieldID, std::string> field_string_map_2;
   field_string_map_2[FID_X] = "B_FID_X";
   field_string_map_2[FID_Y] = "B_FID_Y";
+  std::vector<std::map<FieldID, std::string>> field_string_map_vector;
+  field_string_map_vector.push_back(field_string_map_1);
+  field_string_map_vector.push_back(field_string_map_2);
   
   //CheckpointIndexLauncher checkpoint_launcher(file_is, TaskArgument(&task_arg, sizeof(task_arg)), arg_map);
-  CheckpointIndexLauncher checkpoint_launcher(file_is, file_name, field_string_map_1);    
+  CheckpointIndexLauncher checkpoint_launcher(file_is, file_name, field_string_map_vector);    
   checkpoint_launcher.add_region_requirement(
         RegionRequirement(file_checkpoint_lp_input_1, 0/*projection ID*/, 
                           READ_ONLY, EXCLUSIVE, input_lr_1));
   checkpoint_launcher.region_requirements[0].add_field(FID_X);
   checkpoint_launcher.region_requirements[0].add_field(FID_Y);
   
+  checkpoint_launcher.add_region_requirement(
+        RegionRequirement(file_checkpoint_lp_input_2, 0/*projection ID*/, 
+                          READ_ONLY, EXCLUSIVE, input_lr_2));
+  checkpoint_launcher.region_requirements[1].add_field(FID_X);
+  checkpoint_launcher.region_requirements[1].add_field(FID_Y);
+  
   fumap = runtime->execute_index_space(ctx, checkpoint_launcher);
   fumap.wait_all_results();
 
-  
-  CheckpointIndexLauncher checkpoint_launcher2(file_is, file_name, field_string_map_2);    
-  checkpoint_launcher2.add_region_requirement(
-        RegionRequirement(file_checkpoint_lp_input_2, 0/*projection ID*/, 
-                          READ_ONLY, EXCLUSIVE, input_lr_2));
-  checkpoint_launcher2.region_requirements[0].add_field(FID_X);
-  checkpoint_launcher2.region_requirements[0].add_field(FID_Y);
-  fumap = runtime->execute_index_space(ctx, checkpoint_launcher2);
-  fumap.wait_all_results();
   runtime->issue_execution_fence(ctx);
   
   // ************************************ restart ****************
  // RecoverIndexLauncher restart_launcher(file_is, TaskArgument(&task_arg, sizeof(task_arg)), arg_map); 
-  RecoverIndexLauncher recover_launcher(file_is, file_name, field_string_map_1);  
+  RecoverIndexLauncher recover_launcher(file_is, file_name, field_string_map_vector);  
   recover_launcher.add_region_requirement(
         RegionRequirement(file_recover_lp_output_1, 0/*projection ID*/, 
                           WRITE_DISCARD, EXCLUSIVE, output_lr_1));
   recover_launcher.region_requirements[0].add_field(FID_X);
   recover_launcher.region_requirements[0].add_field(FID_Y);  
+  
+  recover_launcher.add_region_requirement(
+        RegionRequirement(file_recover_lp_output_2, 0/*projection ID*/, 
+                          WRITE_DISCARD, EXCLUSIVE, output_lr_2));
+  recover_launcher.region_requirements[1].add_field(FID_X);
+  recover_launcher.region_requirements[1].add_field(FID_Y);
   fumap = runtime->execute_index_space(ctx, recover_launcher);
   fumap.wait_all_results();
   
-#if 1
-  RecoverIndexLauncher recover_launcher2(file_is, file_name, field_string_map_2);  
-  recover_launcher2.add_region_requirement(
-        RegionRequirement(file_recover_lp_output_2, 0/*projection ID*/, 
-                          WRITE_DISCARD, EXCLUSIVE, output_lr_2));
-  recover_launcher2.region_requirements[0].add_field(FID_X);
-  recover_launcher2.region_requirements[0].add_field(FID_Y);
-  fumap = runtime->execute_index_space(ctx, recover_launcher2);
-  fumap.wait_all_results();
-#endif
   runtime->issue_execution_fence(ctx);
   
   

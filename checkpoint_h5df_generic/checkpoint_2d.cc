@@ -144,10 +144,12 @@ void top_level_task(const Task *task,
   std::map<FieldID, std::string> field_string_map;
   field_string_map[FID_X] = "FID_X";
   field_string_map[FID_Y] = "FID_Y";
+  std::vector<std::map<FieldID, std::string>> field_string_map_vector;
+  field_string_map_vector.push_back(field_string_map);
 
   
   //CheckpointIndexLauncher checkpoint_launcher(file_is, TaskArgument(&task_arg, sizeof(task_arg)), arg_map);
-  CheckpointIndexLauncher checkpoint_launcher(file_is, file_name, field_string_map);    
+  CheckpointIndexLauncher checkpoint_launcher(file_is, file_name, field_string_map_vector);    
   checkpoint_launcher.add_region_requirement(
         RegionRequirement(file_checkpoint_lp_input_1, 0/*projection ID*/, 
                           READ_ONLY, EXCLUSIVE, input_lr_1));
@@ -161,7 +163,7 @@ void top_level_task(const Task *task,
   
   // ************************************ restart ****************
  // RecoverIndexLauncher restart_launcher(file_is, TaskArgument(&task_arg, sizeof(task_arg)), arg_map); 
-  RecoverIndexLauncher recover_launcher(file_is, file_name, field_string_map);  
+  RecoverIndexLauncher recover_launcher(file_is, file_name, field_string_map_vector);  
   recover_launcher.add_region_requirement(
         RegionRequirement(file_recover_lp_output_1, 0/*projection ID*/, 
                           WRITE_DISCARD, EXCLUSIVE, output_lr_1));
