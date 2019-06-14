@@ -5,9 +5,11 @@
 
 using namespace Legion;
 
+#define SERIALIZATION_BUFFER_SIZE 4096  
+
 struct task_args_s{
   size_t field_map_size;
-  char field_map_serial[4096];
+  char field_map_serial[SERIALIZATION_BUFFER_SIZE];
   char file_name[32];
   bool attach_file_flag; 
 };

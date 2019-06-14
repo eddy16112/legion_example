@@ -65,6 +65,9 @@ CheckpointIndexLauncher::CheckpointIndexLauncher(IndexSpace launchspace, const c
   Realm::Serialization::DynamicBufferSerializer dbs(0);
   dbs << field_string_map_vector;
   task_argument.field_map_size = dbs.bytes_used();
+  if (task_argument.field_map_size > SERIALIZATION_BUFFER_SIZE) {
+    assert(0);
+  }
   memcpy(task_argument.field_map_serial, dbs.detach_buffer(), task_argument.field_map_size);
   task_argument.attach_file_flag = attach_file;
   
@@ -228,6 +231,9 @@ RecoverIndexLauncher::RecoverIndexLauncher(IndexSpace launchspace, const char* f
   Realm::Serialization::DynamicBufferSerializer dbs(0);
   dbs << field_string_map_vector;
   task_argument.field_map_size = dbs.bytes_used();
+  if (task_argument.field_map_size > SERIALIZATION_BUFFER_SIZE) {
+    assert(0);
+  }
   memcpy(task_argument.field_map_serial, dbs.detach_buffer(), task_argument.field_map_size);
   task_argument.attach_file_flag = attach_file;
   
