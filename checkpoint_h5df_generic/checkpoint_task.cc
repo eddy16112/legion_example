@@ -178,7 +178,7 @@ void CheckpointIndexLauncher::no_attach_impl(const Task *task, const std::vector
   }
   
   for (unsigned int rid = 0; rid < regions.size(); rid++) {
-    LogicalRegion input_lr = regions[rid].get_logical_region();
+   // LogicalRegion input_lr = regions[rid].get_logical_region();
 
     std::set<FieldID> field_set = task->regions[rid].privilege_fields;  
     std::map<FieldID, std::string>::iterator map_it;
@@ -339,7 +339,7 @@ void RecoverIndexLauncher::no_attach_impl(const Task *task, const std::vector<Ph
   }
   
   for (unsigned int rid = 0; rid < regions.size(); rid++) {
-    LogicalRegion input_lr2 = regions[rid].get_logical_region();
+   // LogicalRegion input_lr2 = regions[rid].get_logical_region();
 
     std::set<FieldID> field_set = task->regions[rid].privilege_fields;  
     std::map<FieldID, std::string>::iterator map_it;
@@ -384,8 +384,17 @@ HDF5LogicalRegion::HDF5LogicalRegion(LogicalRegion lr, LogicalPartition lp, std:
     printf("ID logical region size %ld\n", dim_size[0]);
   } else {
     Domain domain = runtime->get_index_space_domain(ctx, lr.get_index_space());
+#if 0
+    Domain domain = runtime->get_index_space_domain(ctx, lr.get_index_space());
     dim_size[0] = domain.get_volume();
     printf("2D ID logical region size %ld\n", dim_size[0]);
+#else    
+    Point<2> lo = domain.lo();
+    Point<2> hi = domain.hi();
+    dim_size[0] = hi.x - lo.x + 1;
+    dim_size[1] = hi.y - lo.y + 1;
+    printf("2D ID logical region size %ld, lo_x %lld, lo_y %lld, hi_x %lld, hi_y %lld\n", dim_size[0], lo.x, lo.y, hi.x, hi.y);
+#endif
   }
 }
 
@@ -431,9 +440,19 @@ bool HDF5File::generate_hdf5_file(int file_idx)
     } else {
       LogicalRegion sub_lr = runtime->get_logical_subregion_by_color(ctx, (*lr_it).logical_partition, file_idx);
       Domain domain = runtime->get_index_space_domain(ctx, sub_lr.get_index_space());
+#if 0
       hsize_t dims[1];
       dims[0] = domain.get_volume();
       dataspace_id = H5Screate_simple(1, dims, NULL);
+#else
+      hsize_t dims[2];
+      Point<2> lo = domain.lo();
+      Point<2> hi = domain.hi();
+      dims[0] = hi.x - lo.x + 1;
+      dims[1] = hi.y - lo.y + 1;
+      printf("2D ID logical region lo_x %lld, lo_y %lld, hi_x %lld, hi_y %lld\n", lo.x, lo.y, hi.x, hi.y);
+      dataspace_id = H5Screate_simple(2, dims, NULL);
+#endif
     }
     if(dataspace_id < 0) {
       printf("H5Screate_simple failed: %lld\n", (long long)dataspace_id);
