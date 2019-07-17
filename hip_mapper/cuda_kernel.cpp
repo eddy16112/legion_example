@@ -13,7 +13,7 @@ enum FieldIDs {
 using namespace Legion;
 
 __global__
-void init_field_task_kernel(double *ptr, size_t size)
+void init_field_task_kernel(double *ptr)
 {
 //  int tid = blockIdx.x * blockDim.x + threadIdx.x;
 //  ptr[tid] = 0.1;
@@ -60,8 +60,12 @@ void init_field_task_gpu(const Task *task,
   }
   err = hipMemcpy(ptr_y, cpu_buff, sizeof(double)*rect.volume(), hipMemcpyHostToDevice);
   free(cpu_buff);
+  
+  //double *ptr;
+ // hipMalloc(&ptr, sizeof(double)*64);
 
-  //hipLaunchKernelGGL(init_field_task_kernel, dim3(blocks), dim3(threadsPerBlock), 0, 0, ptr_x, rect.volume());
+ // hipLaunchKernelGGL(init_field_task_kernel, dim3(blocks), dim3(threadsPerBlock), 0, 0, ptr_x);
+  //hipModuleLaunchKernel(init_field_task_kernel, 1, 0, 0, 32, 0, 0, 64, 0, ptr_x, NULL)
   
   printf("done with GPU task\n");
 }
