@@ -32,7 +32,7 @@ void init_field_task_gpu(const Task *task,
 
   const int point = task->index_point.point_data[0];
   printf("GPU initializing field %d %d for block %d...\n", FID_X, FID_Y, point);
-
+#if 0
   const FieldAccessor<READ_WRITE,int,1,coord_t,
           Realm::AffineAccessor<int,1,coord_t> > acc_x(regions[0], FID_X);
   const FieldAccessor<READ_WRITE,int,1,coord_t,
@@ -80,4 +80,5 @@ void init_field_task_gpu(const Task *task,
   //hipDeviceSynchronize();
   
   printf("done with GPU task\n");
+#endif
 }

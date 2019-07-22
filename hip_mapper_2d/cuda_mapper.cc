@@ -193,8 +193,8 @@ AdversarialMapper::AdversarialMapper(Machine m,
   }
   
   assert(system_mem != Memory::NO_MEMORY);
-  assert(zerocopy_mem != Memory::NO_MEMORY);
-  assert(gpu_mem != Memory::NO_MEMORY);
+  //assert(zerocopy_mem != Memory::NO_MEMORY);
+  //assert(gpu_mem != Memory::NO_MEMORY);
 }
 
 void AdversarialMapper::map_task(const MapperContext         ctx,
@@ -311,7 +311,9 @@ void top_level_task(const Task *task,
 
   printf("Running daxpy for %d elements...\n", num_elements);
 
-  Rect<1> elem_rect(0,num_elements-1);
+  Point<2> lo(0, 0);
+  Point<2> hi(num_elements-1, num_elements-1);
+  Rect<2> elem_rect(lo, hi);
   IndexSpace is = runtime->create_index_space(ctx, elem_rect);
   FieldSpace input_fs = runtime->create_field_space(ctx);
   {
@@ -320,13 +322,20 @@ void top_level_task(const Task *task,
     allocator.allocate_field(sizeof(int),FID_X);
     allocator.allocate_field(sizeof(int),FID_Y);
   }
+  
+  Rect<1> color_bounds(0,1);
+  IndexSpace color_is = runtime->create_index_space(ctx, color_bounds);
+  IndexPartition ip = runtime->create_equal_partition(ctx, is, color_is);
 
-  LogicalRegion input_lr = runtime->create_logical_region(ctx, is, input_fs);
+  LogicalRegion input_lr_o = runtime->create_logical_region(ctx, is, input_fs);
+  LogicalPartition input_lp = runtime->get_logical_partition(ctx, input_lr_o, ip);
+  
+  LogicalRegion input_lr = runtime->get_logical_subregion_by_color(ctx, input_lp, 0);
 
   {
     TaskLauncher init_launcher(INIT_FIELD_TASK_CPU_ID, TaskArgument(NULL, 0));
     init_launcher.add_region_requirement(
-          RegionRequirement(input_lr, WRITE_DISCARD, EXCLUSIVE, input_lr));
+          RegionRequirement(input_lr, WRITE_DISCARD, EXCLUSIVE, input_lr_o));
     init_launcher.add_field(0/*idx*/, FID_X);
     init_launcher.add_field(0/*idx*/, FID_Y);
     runtime->execute_task(ctx, init_launcher);
@@ -335,7 +344,7 @@ void top_level_task(const Task *task,
   {
     TaskLauncher init_launcher(INIT_FIELD_TASK_GPU_ID, TaskArgument(NULL, 0));
     init_launcher.add_region_requirement(
-          RegionRequirement(input_lr, READ_WRITE, EXCLUSIVE, input_lr));
+          RegionRequirement(input_lr, READ_WRITE, EXCLUSIVE, input_lr_o));
     init_launcher.add_field(0/*idx*/, FID_X);
     init_launcher.add_field(0/*idx*/, FID_Y);
     runtime->execute_task(ctx, init_launcher);
@@ -344,7 +353,7 @@ void top_level_task(const Task *task,
   {
     TaskLauncher init_launcher(INIT_FIELD_TASK_GPU_ID, TaskArgument(NULL, 0));
     init_launcher.add_region_requirement(
-          RegionRequirement(input_lr, READ_WRITE, EXCLUSIVE, input_lr));
+          RegionRequirement(input_lr, READ_WRITE, EXCLUSIVE, input_lr_o));
     init_launcher.add_field(0/*idx*/, FID_X);
     init_launcher.add_field(0/*idx*/, FID_Y);
     runtime->execute_task(ctx, init_launcher);
@@ -370,13 +379,13 @@ void top_level_task(const Task *task,
   {
     TaskLauncher check_launcher(CHECK_TASK_ID, TaskArgument(NULL, 0));
     check_launcher.add_region_requirement(
-        RegionRequirement(input_lr, READ_ONLY, EXCLUSIVE, input_lr));
+        RegionRequirement(input_lr, READ_ONLY, EXCLUSIVE, input_lr_o));
     check_launcher.region_requirements[0].add_field(FID_X);
     check_launcher.region_requirements[0].add_field(FID_Y);
     runtime->execute_task(ctx, check_launcher);
   }
 
-  runtime->destroy_logical_region(ctx, input_lr);
+  runtime->destroy_logical_region(ctx, input_lr_o);
   runtime->destroy_field_space(ctx, input_fs);
   runtime->destroy_index_space(ctx, is);
 }
@@ -391,14 +400,14 @@ void init_field_task_cpu(const Task *task,
   const int point = task->index_point.point_data[0];
   printf("CPU initializing field %d %d for block %d...\n", FID_X, FID_Y, point);
 
-  const FieldAccessor<WRITE_DISCARD,int,1> acc_x(regions[0], FID_X);
-  const FieldAccessor<WRITE_DISCARD,int,1> acc_y(regions[0], FID_Y);
+  const FieldAccessor<WRITE_DISCARD,int,2> acc_x(regions[0], FID_X);
+  const FieldAccessor<WRITE_DISCARD,int,2> acc_y(regions[0], FID_Y);
   // Note here that we get the domain for the subregion for
   // this task from the runtime which makes it safe for running
   // both as a single task and as part of an index space of tasks.
-  Rect<1> rect = runtime->get_index_space_domain(ctx,
+  Rect<2> rect = runtime->get_index_space_domain(ctx,
                   task->regions[0].region.get_index_space());
-  for (PointInRectIterator<1> pir(rect); pir(); pir++) {
+  for (PointInRectIterator<2> pir(rect); pir(); pir++) {
     acc_x[*pir] = 1;
     acc_y[*pir] = 1;
   }
@@ -411,13 +420,13 @@ void check_task(const Task *task,
   assert(regions.size() == 1);
   assert(task->regions.size() == 1);
 
-  const FieldAccessor<READ_ONLY,int,1> acc_x(regions[0], FID_X);
-  const FieldAccessor<READ_ONLY,int,1> acc_y(regions[0], FID_Y);
+  const FieldAccessor<READ_ONLY,int,2> acc_x(regions[0], FID_X);
+  const FieldAccessor<READ_ONLY,int,2> acc_y(regions[0], FID_Y);
 
-  Rect<1> rect = runtime->get_index_space_domain(ctx,
+  Rect<2> rect = runtime->get_index_space_domain(ctx,
                   task->regions[0].region.get_index_space());
   int ct = 0;
-  for (PointInRectIterator<1> pir(rect); pir(); pir++)
+  for (PointInRectIterator<2> pir(rect); pir(); pir++)
   {
     int received_x = acc_x[*pir];
     int received_y = acc_y[*pir];
