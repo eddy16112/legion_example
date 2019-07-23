@@ -31,7 +31,7 @@ ALT_MAPPERS     ?= 0		# Include alternative mappers (not recommended)
 OUTFILE		?= cuda_mapper 
 # List all the application source files here
 GEN_SRC		?= cuda_mapper.cc		# .cc files
-GEN_HIP_SRC	?= cuda_kernel.cu				# .cu files
+GEN_HIP_SRC	?= cuda_kernel.hip				# .cu files
 
 # You can modify these variables, some will be appended to by the runtime makefile
 INC_FLAGS	?=
