@@ -1,9 +1,9 @@
 #include <cstdio>
 #include <cassert>
 #include <cstdlib>
-#include "legion.h"
 
 #include "hip/hip_runtime.h"
+#include "legion.h"
 
 enum FieldIDs {
   FID_X = 1,
