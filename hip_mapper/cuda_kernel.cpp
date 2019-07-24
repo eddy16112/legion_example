@@ -20,18 +20,32 @@ hipError_t hipMemcpy_H(void* dst, const void* src, size_t size, hipMemcpyKind ki
 
 typedef FieldAccessor<READ_WRITE,int,1,coord_t,Realm::AffineAccessor<int,1,coord_t> > AccessorRWint;
 
+struct classA
+{
+  __host__ __device__
+  int get(void)
+  {
+    return 7;
+  }
+};
+
+int get_a(void)
+{
+  return 7;
+}
 __global__
-void init_field_task_kernel(int* ptr)
+void init_field_task_kernel(int* ptr, classA a)
 {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  ptr[tid] = 7;
+  ptr[tid] = a.get();
+  //ptr[tid] = get_a();
 }
 
 __global__
 void init_field_task_kernel_acc(AccessorRWint acc)
 {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  acc[tid] = 8;
+  //acc[tid] = 8;
 }
 
 void init_field_task_gpu(const Task *task,
@@ -84,7 +98,8 @@ void init_field_task_gpu(const Task *task,
 #endif  
 
   //hipFunction_t my_kernel = NULL;
-  hipLaunchKernelGGL((init_field_task_kernel), dim3(blocks), dim3(threadsPerBlock), 0, 0, ptr_x);
+  classA ca;
+  hipLaunchKernelGGL((init_field_task_kernel), dim3(blocks), dim3(threadsPerBlock), 0, 0, ptr_x, ca);
   hipLaunchKernelGGL((init_field_task_kernel_acc), dim3(blocks), dim3(threadsPerBlock), 0, 0, acc_x);
   //hipModuleLaunchKernel(init_field_task_kernel, 1, 0, 0, 32, 0, 0, 64, 0, ptr_x, NULL)
   //init_field_task_kernel<<<1, 32, 0>>>(ptr_x);
