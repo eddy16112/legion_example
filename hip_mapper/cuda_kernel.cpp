@@ -45,7 +45,7 @@ __global__
 void init_field_task_kernel_acc(AccessorRWint acc)
 {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  //acc[tid] = 8;
+  acc[tid] = 8;
 }
 
 void init_field_task_gpu(const Task *task,
